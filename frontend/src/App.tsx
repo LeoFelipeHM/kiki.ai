@@ -1,108 +1,226 @@
-import { useMemo, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Calendar, Home, MessageCircle, Settings } from "lucide-react";
-import { ScreenTransition } from "@/components/motion/ScreenTransition";
-import { AnimatedIcon } from "@/components/motion/AnimatedIcon";
-import { CalendarScreen } from "./components/CalendarScreen";
-import { ChatScreen } from "./components/ChatScreen";
-import { HomeScreen } from "./components/HomeScreen";
-import { SettingsScreen } from "./components/SettingsScreen";
+import { useState } from 'react';
+import { HomeScreen } from './components/HomeScreen';
+import { ChatScreen } from './components/ChatScreen';
+import { CalendarScreen } from './components/CalendarScreen';
+import { NotesScreen } from './components/NotesScreen';
+import { ProfileScreen } from './components/ProfileScreen';
+import { EditProfileField } from './components/EditProfileField';
+import { EditProfilePhoto } from './components/EditProfilePhoto';
+import { ChangePasswordScreen } from './components/ChangePasswordScreen';
+import { NotificationsScreen } from './components/NotificationsScreen';
+import { PrivacyScreen } from './components/PrivacyScreen';
+import { DeleteAccountScreen } from './components/DeleteAccountScreen';
+import { ManageSubscriptionScreen } from './components/ManageSubscriptionScreen';
+import { IntegrationScreen } from './components/IntegrationScreen';
+import { SideMenu } from './components/SideMenu';
+import { ThemeProvider } from './components/ThemeProvider';
+import type { CalendarEvent } from './types/calendar';
 
-type Tab = 'home' | 'chat' | 'calendar' | 'settings'
+type Screen = 'home' | 'chat' | 'calendar' | 'notes' | 'settings' | 'profile' | 'edit-profile-field' | 'edit-profile-photo' | 'change-password' | 'notifications' | 'privacy' | 'delete-account' | 'manage-subscription' | 'integration';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('home')
-  const reduceMotion = useReducedMotion();
+  const [activeScreen, setActiveScreen] = useState<Screen>('home');
+  const [previousScreen, setPreviousScreen] = useState<Screen>('home');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [calendarViewMode, setCalendarViewMode] = useState<'day' | 'week' | 'month' | 'year'>('week');
+  const [editingField, setEditingField] = useState<string>('');
+  const [integrationType, setIntegrationType] = useState<string>('');
+  const [themeColor, setThemeColor] = useState('from-purple-500 to-pink-500');
+  const [profileData, setProfileData] = useState({
+    name: 'Maria Silva',
+    email: 'maria.silva@email.com',
+    phone: '+55 (11) 98765-4321',
+    birthdate: '15 de Março, 1995',
+    language: 'Português (Brasil)',
+    timezone: 'GMT-3 (Brasília)',
+  });
 
-  const tabs = useMemo(
-    () => [
-      { id: "home" as Tab, icon: Home, label: "Início" },
-      { id: "chat" as Tab, icon: MessageCircle, label: "Chat" },
-      { id: "calendar" as Tab, icon: Calendar, label: "Calendário" },
-      { id: "settings" as Tab, icon: Settings, label: "Config" },
-    ],
-    [],
-  );
+  const [events, setEvents] = useState<CalendarEvent[]>([
+    { id: 1, title: 'Reunião com equipe', day: 28, startHour: 10, duration: 1, type: 'meeting', guests: ['João', 'Maria'], description: 'Discutir roadmap do projeto' },
+    { id: 2, title: 'Foco profundo', day: 28, startHour: 14, duration: 2, type: 'task', description: 'Desenvolver nova feature' },
+    { id: 3, title: 'Call com cliente', day: 28, startHour: 16, duration: 1, type: 'meeting', guests: ['Cliente XYZ'] },
+    { id: 4, title: 'Academia', day: 29, startHour: 7, duration: 1, type: 'personal' },
+    { id: 5, title: 'Code review', day: 29, startHour: 10, duration: 1, type: 'task' },
+    { id: 6, title: 'Almoço com time', day: 29, startHour: 12, duration: 1, type: 'personal', guests: ['Time dev'] },
+    { id: 7, title: 'Planejamento sprint', day: 30, startHour: 9, duration: 2, type: 'meeting', guests: ['Equipe completa'], description: 'Planejar próxima sprint' },
+    { id: 8, title: 'Igreja', day: 27, startHour: 10, duration: 2, type: 'personal' },
+    { id: 9, title: 'Mercado', day: 33, startHour: 15, duration: 1, type: 'personal' },
+  ]);
 
-  const screen = useMemo(() => {
-    switch (activeTab) {
-      case "home":
-        return <HomeScreen onNavigateToChat={() => setActiveTab("chat")} />;
-      case "chat":
-        return <ChatScreen />;
-      case "calendar":
-        return <CalendarScreen />;
-      case "settings":
-        return <SettingsScreen />;
-      default:
-        return <HomeScreen onNavigateToChat={() => setActiveTab("chat")} />;
+  const navigateToProfile = () => {
+    setPreviousScreen(activeScreen);
+    setActiveScreen('profile');
+  };
+
+  const handleEditProfileField = (field: string) => {
+    if (field === 'photo') {
+      setActiveScreen('edit-profile-photo');
+    } else {
+      setEditingField(field);
+      setActiveScreen('edit-profile-field');
     }
-  }, [activeTab]);
+  };
+
+  const handleSecurityNavigation = (type: string) => {
+    setPreviousScreen(activeScreen);
+    if (type === 'Alterar senha') {
+      setActiveScreen('change-password');
+    } else if (type === 'Notificações') {
+      setActiveScreen('notifications');
+    } else if (type === 'Privacidade') {
+      setActiveScreen('privacy');
+    } else if (type === 'Gerenciar assinatura') {
+      setActiveScreen('manage-subscription');
+    }
+  };
+
+  const handleIntegrationNavigation = (type: string) => {
+    setPreviousScreen(activeScreen);
+    setIntegrationType(type);
+    setActiveScreen('integration');
+  };
+
+  const handleSaveProfileField = (value: string) => {
+    const fieldMap: { [key: string]: keyof typeof profileData } = {
+      'Nome completo': 'name',
+      'E-mail': 'email',
+      'Telefone': 'phone',
+      'Data de nascimento': 'birthdate',
+      'Idioma': 'language',
+      'Fuso horário': 'timezone',
+    };
+
+    const dataKey = fieldMap[editingField];
+    if (dataKey) {
+      setProfileData({ ...profileData, [dataKey]: value });
+    }
+  };
+
+  const getCurrentFieldValue = () => {
+    const fieldMap: { [key: string]: keyof typeof profileData } = {
+      'Nome completo': 'name',
+      'E-mail': 'email',
+      'Telefone': 'phone',
+      'Data de nascimento': 'birthdate',
+      'Idioma': 'language',
+      'Fuso horário': 'timezone',
+    };
+
+    const dataKey = fieldMap[editingField];
+    return dataKey ? profileData[dataKey] : '';
+  };
+
+  const renderScreen = () => {
+    switch (activeScreen) {
+      case 'home':
+        return (
+          <HomeScreen
+            onNavigateToChat={() => setActiveScreen('chat')}
+            onNavigateToCalendar={(viewMode?: 'day' | 'week' | 'month' | 'year') => {
+              if (viewMode) setCalendarViewMode(viewMode);
+              setActiveScreen('calendar');
+            }}
+            onNavigateToProfile={navigateToProfile}
+            onOpenMenu={() => setIsMenuOpen(true)}
+            events={events}
+            userName={profileData.name}
+          />
+        );
+      case 'chat':
+        return <ChatScreen onOpenMenu={() => setIsMenuOpen(true)} onNavigateToProfile={navigateToProfile} onNavigateToHome={() => setActiveScreen('home')} userName={profileData.name} />;
+      case 'calendar':
+        return (
+          <CalendarScreen
+            onOpenMenu={() => setIsMenuOpen(true)}
+            onNavigateToProfile={navigateToProfile}
+            onNavigateToHome={() => setActiveScreen('home')}
+            initialViewMode={calendarViewMode}
+            events={events}
+            setEvents={setEvents}
+          />
+        );
+      case 'notes':
+        return (
+          <NotesScreen
+            onOpenMenu={() => setIsMenuOpen(true)}
+            onNavigateToProfile={navigateToProfile}
+            onNavigateToHome={() => setActiveScreen('home')}
+            userName={profileData.name}
+          />
+        );
+      case 'settings':
+      case 'profile':
+        return (
+          <ProfileScreen
+            onNavigateBack={() => setActiveScreen(previousScreen)}
+            onEditProfileField={handleEditProfileField}
+            onSecurityNavigation={handleSecurityNavigation}
+            onIntegrationNavigation={handleIntegrationNavigation}
+            profileData={profileData}
+          />
+        );
+      case 'edit-profile-field':
+        return (
+          <EditProfileField
+            field={editingField}
+            currentValue={getCurrentFieldValue()}
+            onNavigateBack={() => setActiveScreen('profile')}
+            onSave={handleSaveProfileField}
+          />
+        );
+      case 'edit-profile-photo':
+        return (
+          <EditProfilePhoto
+            onNavigateBack={() => setActiveScreen('profile')}
+            onSaveColor={(color) => setThemeColor(color)}
+            currentColor={themeColor}
+            userName={profileData.name}
+          />
+        );
+      case 'change-password':
+        return <ChangePasswordScreen onNavigateBack={() => setActiveScreen('profile')} />;
+      case 'notifications':
+        return <NotificationsScreen onNavigateBack={() => setActiveScreen(previousScreen)} />;
+      case 'privacy':
+        return <PrivacyScreen onNavigateBack={() => setActiveScreen('profile')} onDeleteAccount={() => setActiveScreen('delete-account')} />;
+      case 'delete-account':
+        return <DeleteAccountScreen onNavigateBack={() => setActiveScreen('privacy')} onManageSubscription={() => setActiveScreen('manage-subscription')} />;
+      case 'manage-subscription':
+        return <ManageSubscriptionScreen onNavigateBack={() => setActiveScreen('profile')} />;
+      case 'integration':
+        return <IntegrationScreen onNavigateBack={() => setActiveScreen(previousScreen)} integrationType={integrationType} />;
+      default:
+        return (
+          <HomeScreen
+            onNavigateToChat={() => setActiveScreen('chat')}
+            onNavigateToCalendar={() => setActiveScreen('calendar')}
+            onOpenMenu={() => setIsMenuOpen(true)}
+            events={events}
+            userName={profileData.name}
+          />
+        );
+    }
+  };
 
   return (
-    <div className="size-full flex flex-col bg-background max-w-md mx-auto">
-      <AnimatePresence mode="wait" initial={false}>
-        <ScreenTransition motionKey={activeTab} className="flex min-h-0 flex-1">
-          {screen}
-        </ScreenTransition>
-      </AnimatePresence>
+    <ThemeProvider themeColor={themeColor}>
+      <div className="size-full flex flex-col bg-background max-w-md mx-auto">
+        {renderScreen()}
 
-      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-background/90 backdrop-blur border-t border-border">
-        <div className="relative flex items-center justify-around px-4 py-3">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className="group relative flex flex-col items-center gap-1 min-w-[72px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:rounded-2xl"
-              >
-                <div className="relative">
-                  {isActive && (
-                    <motion.div
-                      layoutId="activeTabPill"
-                      className="absolute inset-0 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 shadow-sm"
-                      transition={
-                        reduceMotion
-                          ? { duration: 0 }
-                          : { type: "spring", stiffness: 520, damping: 42 }
-                      }
-                    />
-                  )}
-                  <motion.div
-                    className={`relative w-12 h-12 rounded-2xl flex items-center justify-center text-muted-foreground transition-[background-color,color,transform] duration-200 ${
-                      isActive
-                        ? "text-white"
-                        : "group-hover:bg-muted group-active:scale-[0.98]"
-                    }`}
-                    whileHover={reduceMotion ? undefined : { y: -1 }}
-                    whileTap={reduceMotion ? undefined : { scale: 0.98, y: 0 }}
-                    transition={
-                      reduceMotion ? { duration: 0 } : { duration: 0.18 }
-                    }
-                  >
-                    <AnimatedIcon
-                      className="inline-flex"
-                      hover={isActive ? "none" : "lift"}
-                    >
-                      <tab.icon className="w-6 h-6 transition-[transform,opacity] duration-200 group-hover:opacity-90" />
-                    </AnimatedIcon>
-                  </motion.div>
-                </div>
-                <span
-                  className={`text-xs transition-colors ${
-                    isActive
-                      ? "text-foreground"
-                      : "text-muted-foreground group-hover:text-foreground/80"
-                  }`}
-                >
-                  {tab.label}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </nav>
-    </div>
-  )
+        <SideMenu
+          isOpen={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onNavigate={(screen) => {
+            if (screen === 'calendar') {
+              setCalendarViewMode('week');
+            }
+            setActiveScreen(screen);
+          }}
+          currentScreen={activeScreen}
+          userName={profileData.name}
+          userEmail={profileData.email}
+        />
+      </div>
+    </ThemeProvider>
+  );
 }
