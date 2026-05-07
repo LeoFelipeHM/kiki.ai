@@ -1,8 +1,8 @@
-import { Mic, Volume2, X, Sparkles } from 'lucide-react';
+import { Mic, X, Sparkles } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useTheme } from './ThemeProvider';
 
-export function VoiceChatOrb() {
+export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode }) {
   const { themeColor } = useTheme();
   const [isCallActive, setIsCallActive] = useState(false);
   const [voiceCallState, setVoiceCallState] = useState<'idle' | 'user-speaking' | 'kiki-speaking'>('idle');
@@ -22,7 +22,7 @@ export function VoiceChatOrb() {
         } else {
           clearInterval(transcriptionInterval);
         }
-      }, 300);
+      }, 15);
 
       const timer = setTimeout(() => {
         setVoiceCallState('kiki-speaking');
@@ -38,12 +38,12 @@ export function VoiceChatOrb() {
           } else {
             clearInterval(kikiInterval);
           }
-        }, 250);
+        }, 14);
 
         setTimeout(() => {
           setVoiceCallState('idle');
-        }, 3000);
-      }, 2500);
+        }, 175);
+      }, 112);
 
       return () => {
         clearTimeout(timer);
@@ -175,7 +175,8 @@ export function VoiceChatOrb() {
 
   return (
     <div className="fixed bottom-6 right-0 left-0 max-w-md mx-auto z-40 pointer-events-none">
-      <div className="absolute bottom-0 right-5 pointer-events-auto">
+      <div className="absolute bottom-0 right-5 pointer-events-auto flex items-center gap-2">
+        {leftActions ? <div className="flex items-center gap-2 flex-nowrap">{leftActions}</div> : null}
         <button
           onClick={handleActivate}
           className={`relative w-12 h-12 rounded-full flex items-center justify-center shadow-2xl btn-apple transition-all bg-gradient-to-br ${themeColor}`}

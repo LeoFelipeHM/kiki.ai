@@ -36,9 +36,9 @@ export function SideMenu({
   const pathname = location.pathname;
   const menuItems: { id: MenuScreen; icon: typeof Home; label: string; description: string }[] = [
     { id: 'home', icon: Home, label: 'Início', description: 'Página inicial' },
+    { id: 'chat', icon: MessageCircle, label: 'Chat com Kiki', description: 'Converse com sua assistente' },
     { id: 'calendar', icon: Calendar, label: 'Calendário', description: 'Visualize sua agenda' },
     { id: 'notes', icon: FileText, label: 'Notas', description: 'Suas anotações' },
-    { id: 'chat', icon: MessageCircle, label: 'Chat com Kiki', description: 'Converse com sua assistente' },
     ...(isAdmin
       ? [{ id: 'admin-users' as const, icon: Users, label: 'Usuários', description: 'Administrar contas' }]
       : []),

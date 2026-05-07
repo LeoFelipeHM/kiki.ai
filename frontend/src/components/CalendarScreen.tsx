@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Plus, AlertCircle, Sparkles, X, Users, Menu, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, AlertCircle, X, Users, Menu, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -425,7 +425,6 @@ export function CalendarScreen({
   events,
   setEvents,
 }: CalendarScreenProps) {
-  const [showKikiSuggestion, setShowKikiSuggestion] = useState(true);
   const [showConflictWarning, setShowConflictWarning] = useState(false);
   const [editingEvent, setEditingEvent] = useState<EditingDraft | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
@@ -440,6 +439,7 @@ export function CalendarScreen({
   const viewMenuRef = useRef<HTMLDivElement>(null);
   const hoursScrollRef = useRef<HTMLDivElement>(null);
   const contentScrollRef = useRef<HTMLDivElement>(null);
+  const dayScrollRef = useRef<HTMLDivElement>(null);
 
   const todayKey = dayKeyFromDate(new Date());
 
@@ -492,11 +492,26 @@ export function CalendarScreen({
     };
   }, [showViewMenu]);
 
-  useEffect(() => {
-    if (viewMode !== 'year') {
-      setShowKikiSuggestion(true);
+  const scrollToNow = useCallback(() => {
+    if (viewMode !== 'day' && viewMode !== 'week') return;
+    const now = new Date();
+    const nowHour = now.getHours() + now.getMinutes() / 60;
+    const top = Math.max(0, Math.round(nowHour * hourHeightPx - hourHeightPx * 2));
+
+    if (viewMode === 'week') {
+      if (contentScrollRef.current) contentScrollRef.current.scrollTop = top;
+      if (hoursScrollRef.current) hoursScrollRef.current.scrollTop = top;
+    } else {
+      if (dayScrollRef.current) dayScrollRef.current.scrollTop = top;
     }
-  }, [viewMode]);
+  }, [hourHeightPx, viewMode]);
+
+  useEffect(() => {
+    // Deixa o horário atual em foco ao abrir/trocar visão.
+    // rAF garante que o container já tenha layout/altura.
+    const id = requestAnimationFrame(scrollToNow);
+    return () => cancelAnimationFrame(id);
+  }, [scrollToNow]);
 
   const handleVerticalScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (hoursScrollRef.current && e.currentTarget !== hoursScrollRef.current) {
@@ -566,28 +581,6 @@ export function CalendarScreen({
     const ev = events.find((e) => e.id === eventId);
     if (!ev) return;
     void handleDrop(eventId, newDayKey, snapQuarterHour(placement(ev).startHour));
-  };
-
-  const applyKikiSuggestion = async () => {
-    const target = events.find((e) => e.title === 'Foco profundo');
-    if (!target) {
-      setShowKikiSuggestion(false);
-      return;
-    }
-    const { duration } = placement(target);
-    const dk = dayKeyFromDate(parseISO(target.startsAt));
-    const { startsAt, endsAt } = buildIsoRange(dk, 9, duration);
-    try {
-      setActionLoading(true);
-      const updated = await patchCalendarEvent(target.id, { startsAt, endsAt });
-      setEvents((prev) => mergeEventsById(prev, [updated]));
-    } catch (e) {
-      if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
-      else setSyncError(e instanceof Error ? e.message : 'Erro ao aplicar sugestão.');
-    } finally {
-      setActionLoading(false);
-      setShowKikiSuggestion(false);
-    }
   };
 
   const openDraftFromEvent = (event: CalendarEvent) => {
@@ -721,7 +714,7 @@ export function CalendarScreen({
   return (
     <>
       <DndProvider backend={HTML5Backend}>
-        <div className="flex-1 flex flex-col bg-background overflow-hidden">
+        <div className="flex-1 flex flex-col bg-background overflow-hidden relative">
           <div className="px-5 pt-6 pb-3 border-b border-border bg-background">
             <div className="flex items-center justify-between mb-4">
               <button
@@ -812,81 +805,10 @@ export function CalendarScreen({
               )}
             </div>
 
-            {(viewMode === 'week' || viewMode === 'day') && (
-              <div className="flex items-center justify-center gap-2 mt-2 mb-1">
-                <button
-                  type="button"
-                  onClick={() => setHourHeightPx((h) => Math.max(MIN_HOUR_HEIGHT, h - HOUR_HEIGHT_ZOOM_STEP))}
-                  disabled={hourHeightPx <= MIN_HOUR_HEIGHT}
-                  title="Ver mais horas (cartões menores)"
-                  className="w-9 h-9 rounded-xl bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <ZoomOut className="w-4 h-4 text-muted-foreground" />
-                </button>
-                <span className="text-[11px] text-muted-foreground tabular-nums min-w-[4.5rem] text-center">
-                  {hourHeightPx}px/h
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setHourHeightPx((h) => Math.min(MAX_HOUR_HEIGHT, h + HOUR_HEIGHT_ZOOM_STEP))}
-                  disabled={hourHeightPx >= MAX_HOUR_HEIGHT}
-                  title="Aumentar cartões (menos horas visíveis)"
-                  className="w-9 h-9 rounded-xl bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <ZoomIn className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </div>
-            )}
-
             {(syncLoading || syncError) && (
               <div className="mt-2 text-xs text-muted-foreground">
                 {syncLoading && <p>A sincronizar com o servidor…</p>}
                 {syncError && <p className="text-red-500">{syncError}</p>}
-              </div>
-            )}
-
-            {showKikiSuggestion && viewMode !== 'year' && (
-              <div className="mt-3 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-2xl p-3 overflow-hidden">
-                <div className="flex items-start gap-2">
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-3.5 h-3.5 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-xs mb-2">
-                      {viewMode === 'day' && (
-                        <>Veja os seus compromissos de hoje e mantenha pausas entre reuniões quando possível.</>
-                      )}
-                      {viewMode === 'week' && (
-                        <>
-                          Sugiro mover <span className="font-medium">&quot;Foco profundo&quot;</span> para 9h. Você é mais
-                          produtivo pela manhã!
-                        </>
-                      )}
-                      {viewMode === 'month' && (
-                        <>
-                          Revise o mês e reserve blocos para trabalho focado — a Kiki pode ajudar a reorganizar depois.
-                        </>
-                      )}
-                    </p>
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => void applyKikiSuggestion()}
-                        disabled={actionLoading}
-                        className="px-3 py-1.5 bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-full text-xs btn-apple-gradient disabled:opacity-50"
-                      >
-                        Aplicar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowKikiSuggestion(false)}
-                        className="px-3 py-1.5 bg-muted rounded-full text-xs hover:bg-muted/80 btn-apple"
-                      >
-                        Dispensar
-                      </button>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
 
@@ -1029,7 +951,7 @@ export function CalendarScreen({
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto scrollbar-hide">
+              <div ref={dayScrollRef} className="flex-1 overflow-y-auto scrollbar-hide">
                 <div className="flex">
                   <div className="w-10 flex-shrink-0 bg-background">
                     <div className="relative pt-1.5">
@@ -1326,8 +1248,34 @@ export function CalendarScreen({
               </div>
             </div>
           )}
+
         </div>
       </DndProvider>
+
+      {(viewMode === 'week' || viewMode === 'day') && !editingEvent && (
+        <div className="fixed bottom-6 left-5 z-40 pointer-events-none">
+          <div className="pointer-events-auto flex items-center gap-2 flex-nowrap">
+            <button
+              type="button"
+              onClick={() => setHourHeightPx((h) => Math.max(MIN_HOUR_HEIGHT, h - HOUR_HEIGHT_ZOOM_STEP))}
+              disabled={hourHeightPx <= MIN_HOUR_HEIGHT}
+              title="Diminuir zoom"
+              className="w-12 h-12 shrink-0 rounded-full bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
+            >
+              <ZoomOut className="w-5 h-5 text-muted-foreground" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setHourHeightPx((h) => Math.min(MAX_HOUR_HEIGHT, h + HOUR_HEIGHT_ZOOM_STEP))}
+              disabled={hourHeightPx >= MAX_HOUR_HEIGHT}
+              title="Aumentar zoom"
+              className="w-12 h-12 shrink-0 rounded-full bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
+            >
+              <ZoomIn className="w-5 h-5 text-muted-foreground" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <VoiceChatOrb />
     </>

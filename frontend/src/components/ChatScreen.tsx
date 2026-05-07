@@ -1,5 +1,5 @@
 import { Send, Sparkles, Calendar, Clock, CheckCircle2, ListTodo, Mic, MicOff, Menu, X, Phone } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { streamChat, type ChatApiMessage } from '@/services/chat';
 
 interface Message {
@@ -37,10 +37,6 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
   const [voiceCallState, setVoiceCallState] = useState<'idle' | 'user-speaking' | 'kiki-speaking'>('idle');
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [streamingMsgId, setStreamingMsgId] = useState<number | null>(null);
-  const streamTargetRef = useRef('');
-  /** Quando true, o backend já encerrou o stream; o digitador pode finalizar a mensagem. */
-  const streamCompleteRef = useRef(false);
 
   function messagesToApiPayload(history: Message[]): ChatApiMessage[] {
     return history
@@ -64,46 +60,14 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
         prev.map((m) => (m.id === 1 ? { ...m, text: WELCOME_MESSAGE_FULL.slice(0, i) } : m)),
       );
       if (i >= WELCOME_MESSAGE_FULL.length) window.clearInterval(iv);
-    }, 52);
+    }, 26);
     return () => window.clearInterval(iv);
   }, []);
 
-  /** Digitação da resposta em streaming: avança até igualar `streamTargetRef`; só depois do stream terminado libera a mensagem. */
-  useEffect(() => {
-    if (streamingMsgId === null) return;
-    const msgId = streamingMsgId;
-    const tick = window.setInterval(() => {
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === msgId);
-        if (idx === -1) return prev;
-        const cur = prev[idx];
-        if (cur.streamingPhase === 'thinking') return prev;
-
-        const target = streamTargetRef.current;
-
-        if (cur.text.length < target.length) {
-          const nextText = target.slice(0, cur.text.length + 1);
-          return prev.map((m, j) =>
-            j === idx ? { ...m, text: nextText, streamingPhase: 'typing' as const } : m,
-          );
-        }
-
-        if (streamCompleteRef.current) {
-          streamCompleteRef.current = false;
-          queueMicrotask(() => {
-            setStreamingMsgId(null);
-            streamTargetRef.current = '';
-          });
-          return prev.map((m, j) =>
-            j === idx ? { ...m, text: target, streamingPhase: undefined } : m,
-          );
-        }
-
-        return prev;
-      });
-    }, 52);
-    return () => window.clearInterval(tick);
-  }, [streamingMsgId]);
+  /**
+   * Streaming: renderiza tokens imediatamente (sem “digitação” artificial).
+   * Isso reduz muito a latência percebida.
+   */
 
   const showQuickSuggestions = !messages.some((m) => m.sender === 'user');
 
@@ -135,9 +99,6 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     setIsSending(true);
 
     const kikiId = nextMessageId(transcript);
-    streamCompleteRef.current = false;
-    streamTargetRef.current = '';
-    setStreamingMsgId(kikiId);
 
     setMessages([
       ...transcript,
@@ -154,26 +115,30 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
 
     await streamChat(apiMessages, {
       onDelta: (delta) => {
-        streamTargetRef.current += delta;
-        if (!sawDelta) {
-          sawDelta = true;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === kikiId ? { ...m, streamingPhase: 'typing' as const } : m,
-            ),
-          );
-        }
+        if (!sawDelta) sawDelta = true;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === kikiId
+              ? {
+                  ...m,
+                  text: (m.text ?? '') + delta,
+                  streamingPhase: 'typing' as const,
+                }
+              : m,
+          ),
+        );
       },
       onDone: () => {
-        const finalText = streamTargetRef.current.trim() || '(Sem texto na resposta.)';
-        streamTargetRef.current = finalText;
-        streamCompleteRef.current = true;
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== kikiId) return m;
+            const finalText = m.text.trim() || '(Sem texto na resposta.)';
+            return { ...m, text: finalText, streamingPhase: undefined };
+          }),
+        );
         setIsSending(false);
       },
       onError: (msg) => {
-        streamCompleteRef.current = false;
-        setStreamingMsgId(null);
-        streamTargetRef.current = '';
         setMessages((prev) => prev.filter((m) => m.id !== kikiId));
         const fallback = 'Não foi possível obter resposta da Kiki.';
         if (msg.includes('sessão') || msg.includes('login')) {
