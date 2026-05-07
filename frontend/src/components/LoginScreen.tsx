@@ -90,12 +90,6 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             {isSubmitting ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
-
-        <div className="mt-6 bg-muted rounded-xl p-3">
-          <p className="text-[11px] text-muted-foreground">
-            Use seu usuário cadastrado no backend (`/auth/register`) para entrar.
-          </p>
-        </div>
       </div>
     </div>
   );

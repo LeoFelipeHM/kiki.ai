@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from presentation.api.routers import admin, auth, calendar, health, notes, settings
+from presentation.api.routers import admin, auth, calendar, chat, health, notes, settings
 
 app = FastAPI(title="kiki-backend")
 
@@ -24,3 +24,4 @@ app.include_router(admin.router)
 app.include_router(calendar.router)
 app.include_router(notes.router)
 app.include_router(settings.router)
+app.include_router(chat.router)

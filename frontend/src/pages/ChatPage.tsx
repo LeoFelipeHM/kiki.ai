@@ -9,11 +9,13 @@ export function ChatPage() {
   const { profileData, openMenu } = useAppShell();
 
   return (
-    <ChatScreen
-      onOpenMenu={openMenu}
-      onNavigateToProfile={() => navigate(ROUTES.profile, { state: { from: location.pathname } })}
-      onNavigateToHome={() => navigate(ROUTES.home)}
-      userName={profileData.name}
-    />
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <ChatScreen
+        onOpenMenu={openMenu}
+        onNavigateToProfile={() => navigate(ROUTES.profile, { state: { from: location.pathname } })}
+        onNavigateToHome={() => navigate(ROUTES.home)}
+        userName={profileData.name}
+      />
+    </div>
   );
 }

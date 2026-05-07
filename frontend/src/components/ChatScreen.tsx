@@ -1,5 +1,6 @@
-import { Send, Sparkles, Calendar, Clock, CheckCircle2, ListTodo, Mic, MicOff, Volume2, Menu, X, Phone } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Send, Sparkles, Calendar, Clock, CheckCircle2, ListTodo, Mic, MicOff, Menu, X, Phone } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { streamChat, type ChatApiMessage } from '@/services/chat';
 
 interface Message {
   id: number;
@@ -7,6 +8,8 @@ interface Message {
   sender: 'user' | 'kiki';
   timestamp: Date;
   isUserAudio?: boolean;
+  /** Resposta em andamento: “pensando” antes do 1º token; “digitando” em streaming. */
+  streamingPhase?: 'thinking' | 'typing';
 }
 
 interface ChatScreenProps {
@@ -16,33 +19,93 @@ interface ChatScreenProps {
   userName?: string;
 }
 
+const WELCOME_MESSAGE_FULL =
+  'Olá! Sou a Kiki, sua assistente pessoal. Como posso ajudar você hoje?';
+
 export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, userName = 'Maria Silva' }: ChatScreenProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 1,
-      text: 'Olá! Sou a Kiki, sua assistente pessoal. Como posso ajudar você hoje?',
+      text: '',
       sender: 'kiki',
       timestamp: new Date(),
     },
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isRecording, setIsRecording] = useState(false);
-  const [kikiSpeakingMessageId, setKikiSpeakingMessageId] = useState<number | null>(null);
   const [isVoiceCallActive, setIsVoiceCallActive] = useState(false);
   const [voiceCallState, setVoiceCallState] = useState<'idle' | 'user-speaking' | 'kiki-speaking'>('idle');
+  const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [streamingMsgId, setStreamingMsgId] = useState<number | null>(null);
+  const streamTargetRef = useRef('');
+  /** Quando true, o backend já encerrou o stream; o digitador pode finalizar a mensagem. */
+  const streamCompleteRef = useRef(false);
 
+  function messagesToApiPayload(history: Message[]): ChatApiMessage[] {
+    return history
+      .filter((m) => !(m.sender === 'user' && m.isUserAudio))
+      .map((m) => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.text,
+      }));
+  }
+
+  function nextMessageId(history: Message[]): number {
+    return history.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+  }
+
+  /** Boas-vindas: digitação letra a letra (mensagem id 1). */
   useEffect(() => {
-    if (messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.sender === 'kiki') {
-        setKikiSpeakingMessageId(lastMessage.id);
-        const duration = Math.max(2000, lastMessage.text.length * 50);
-        setTimeout(() => {
-          setKikiSpeakingMessageId(null);
-        }, duration);
-      }
-    }
-  }, [messages]);
+    let i = 0;
+    const iv = window.setInterval(() => {
+      i += 1;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === 1 ? { ...m, text: WELCOME_MESSAGE_FULL.slice(0, i) } : m)),
+      );
+      if (i >= WELCOME_MESSAGE_FULL.length) window.clearInterval(iv);
+    }, 52);
+    return () => window.clearInterval(iv);
+  }, []);
+
+  /** Digitação da resposta em streaming: avança até igualar `streamTargetRef`; só depois do stream terminado libera a mensagem. */
+  useEffect(() => {
+    if (streamingMsgId === null) return;
+    const msgId = streamingMsgId;
+    const tick = window.setInterval(() => {
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === msgId);
+        if (idx === -1) return prev;
+        const cur = prev[idx];
+        if (cur.streamingPhase === 'thinking') return prev;
+
+        const target = streamTargetRef.current;
+
+        if (cur.text.length < target.length) {
+          const nextText = target.slice(0, cur.text.length + 1);
+          return prev.map((m, j) =>
+            j === idx ? { ...m, text: nextText, streamingPhase: 'typing' as const } : m,
+          );
+        }
+
+        if (streamCompleteRef.current) {
+          streamCompleteRef.current = false;
+          queueMicrotask(() => {
+            setStreamingMsgId(null);
+            streamTargetRef.current = '';
+          });
+          return prev.map((m, j) =>
+            j === idx ? { ...m, text: target, streamingPhase: undefined } : m,
+          );
+        }
+
+        return prev;
+      });
+    }, 52);
+    return () => window.clearInterval(tick);
+  }, [streamingMsgId]);
+
+  const showQuickSuggestions = !messages.some((m) => m.sender === 'user');
 
   const quickActions = [
     { icon: Calendar, label: 'Agendar reunião', color: 'bg-blue-100 text-blue-600' },
@@ -51,29 +114,76 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     { icon: CheckCircle2, label: 'Planejar semana', color: 'bg-pink-100 text-pink-600' },
   ];
 
-  const handleSend = () => {
-    if (!inputValue.trim()) return;
+  const handleSend = async () => {
+    const text = inputValue.trim();
+    if (!text || isSending || isRecording) return;
 
-    const newMessage: Message = {
-      id: messages.length + 1,
-      text: inputValue,
+    const userMessage: Message = {
+      id: nextMessageId(messages),
+      text,
       sender: 'user',
       timestamp: new Date(),
       isUserAudio: false,
     };
 
-    setMessages([...messages, newMessage]);
-    setInputValue('');
+    const transcript = [...messages, userMessage];
+    const apiMessages = messagesToApiPayload(transcript);
 
-    setTimeout(() => {
-      const kikiResponse: Message = {
-        id: messages.length + 2,
-        text: 'Entendi! Estou processando sua solicitação. Como posso ajudar mais?',
+    setInputValue('');
+    setMessages(transcript);
+    setSendError(null);
+    setIsSending(true);
+
+    const kikiId = nextMessageId(transcript);
+    streamCompleteRef.current = false;
+    streamTargetRef.current = '';
+    setStreamingMsgId(kikiId);
+
+    setMessages([
+      ...transcript,
+      {
+        id: kikiId,
+        text: '',
         sender: 'kiki',
         timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, kikiResponse]);
-    }, 1000);
+        streamingPhase: 'thinking',
+      },
+    ]);
+
+    let sawDelta = false;
+
+    await streamChat(apiMessages, {
+      onDelta: (delta) => {
+        streamTargetRef.current += delta;
+        if (!sawDelta) {
+          sawDelta = true;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === kikiId ? { ...m, streamingPhase: 'typing' as const } : m,
+            ),
+          );
+        }
+      },
+      onDone: () => {
+        const finalText = streamTargetRef.current.trim() || '(Sem texto na resposta.)';
+        streamTargetRef.current = finalText;
+        streamCompleteRef.current = true;
+        setIsSending(false);
+      },
+      onError: (msg) => {
+        streamCompleteRef.current = false;
+        setStreamingMsgId(null);
+        streamTargetRef.current = '';
+        setMessages((prev) => prev.filter((m) => m.id !== kikiId));
+        const fallback = 'Não foi possível obter resposta da Kiki.';
+        if (msg.includes('sessão') || msg.includes('login')) {
+          setSendError(msg);
+        } else {
+          setSendError(msg || fallback);
+        }
+        setIsSending(false);
+      },
+    });
   };
 
   const handleVoiceRecord = () => {
@@ -271,8 +381,8 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
 
   return (
     <>
-      <div className="flex-1 flex flex-col">
-      <div className="px-5 pt-6 pb-3 border-b border-border bg-background">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="sticky top-0 z-10 shrink-0 border-b border-border bg-background px-5 pb-3 pt-6">
         <div className="flex items-center justify-between mb-3">
           <button
             onClick={onOpenMenu}
@@ -304,7 +414,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-3 scrollbar-hide">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 scrollbar-hide">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -324,25 +434,21 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
                 </div>
               )}
 
-              <p className="text-sm leading-relaxed">{message.text}</p>
-
-              {message.sender === 'kiki' && kikiSpeakingMessageId === message.id && (
-                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-border">
-                  <Volume2 className="w-3.5 h-3.5 text-purple-500 animate-pulse" />
-                  <div className="flex gap-0.5 flex-1">
-                    {Array.from({ length: 15 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className="w-0.5 bg-purple-500 rounded-full animate-pulse"
-                        style={{
-                          height: `${Math.sin(i * 0.5) * 6 + 10}px`,
-                          animationDelay: `${i * 50}ms`,
-                        }}
+              {message.sender === 'kiki' && message.streamingPhase === 'thinking' ? (
+                <p className="text-sm leading-relaxed flex flex-wrap items-center gap-x-1.5 text-muted-foreground">
+                  <span>Kiki está pensando</span>
+                  <span className="inline-flex items-center gap-0.5" aria-hidden>
+                    {[0, 120, 240].map((delay) => (
+                      <span
+                        key={delay}
+                        className="w-1 h-1 rounded-full bg-muted-foreground/75 animate-bounce"
+                        style={{ animationDelay: `${delay}ms` }}
                       />
                     ))}
-                  </div>
-                  <span className="text-[10px] text-purple-500">Reproduzindo...</span>
-                </div>
+                  </span>
+                </p>
+              ) : (
+                <p className="text-sm leading-relaxed">{message.text}</p>
               )}
 
               <p
@@ -360,24 +466,31 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
         ))}
       </div>
 
-      <div className="px-5 pb-3">
-        <div className="mb-3">
-          <p className="text-xs text-muted-foreground mb-2">Sugestões rápidas</p>
-          <div className="grid grid-cols-2 gap-1.5">
-            {quickActions.map((action, index) => (
-              <button
-                key={index}
-                onClick={() => setInputValue(action.label)}
-                className="flex items-center gap-2 p-2.5 rounded-xl border border-border bg-card hover:bg-muted btn-apple"
-              >
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center ${action.color}`}>
-                  <action.icon className="w-3.5 h-3.5" />
-                </div>
-                <span className="text-xs">{action.label}</span>
-              </button>
-            ))}
+      <div className="shrink-0 border-t border-border bg-background px-5 pb-3 pt-2">
+        {sendError && (
+          <p className="text-xs text-destructive mb-2" role="alert">
+            {sendError}
+          </p>
+        )}
+        {showQuickSuggestions && (
+          <div className="mb-3">
+            <p className="text-xs text-muted-foreground mb-2">Sugestões rápidas</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {quickActions.map((action, index) => (
+                <button
+                  key={index}
+                  onClick={() => setInputValue(action.label)}
+                  className="flex items-center gap-2 p-2.5 rounded-xl border border-border bg-card hover:bg-muted btn-apple"
+                >
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center ${action.color}`}>
+                    <action.icon className="w-3.5 h-3.5" />
+                  </div>
+                  <span className="text-xs">{action.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex items-center gap-2">
           <div className="flex-1 flex items-center gap-1.5 bg-muted rounded-full p-1.5">
@@ -385,14 +498,19 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-              placeholder={isRecording ? "Gravando..." : "Digite sua mensagem..."}
-              disabled={isRecording}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSend();
+                }
+              }}
+              placeholder={isRecording ? 'Gravando...' : isSending ? 'Enviando...' : 'Digite sua mensagem...'}
+              disabled={isRecording || isSending}
               className="flex-1 bg-transparent px-3 py-1.5 text-sm outline-none disabled:opacity-50"
             />
             <button
-              onClick={handleSend}
-              disabled={!inputValue.trim() || isRecording}
+              onClick={() => void handleSend()}
+              disabled={!inputValue.trim() || isRecording || isSending}
               className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white btn-apple-gradient disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="w-4 h-4" />
@@ -401,18 +519,20 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
 
           <button
             onClick={handleVoiceRecord}
+            disabled={isSending}
             className={`w-12 h-12 rounded-full flex items-center justify-center text-white ${
               isRecording
                 ? 'bg-red-500 animate-pulse'
                 : 'bg-muted hover:bg-muted/80'
-            }`}
+            } disabled:opacity-40 disabled:cursor-not-allowed`}
           >
             {isRecording ? <MicOff className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5 text-foreground" />}
           </button>
 
           <button
             onClick={handleStartVoiceCall}
-            className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 flex items-center justify-center text-white btn-apple-gradient shadow-lg"
+            disabled={isSending}
+            className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 flex items-center justify-center text-white btn-apple-gradient shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Phone className="w-5 h-5" />
           </button>

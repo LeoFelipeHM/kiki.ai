@@ -153,15 +153,17 @@ function AppRoutes() {
             <div className="w-8 h-8 rounded-full border-2 border-purple-200 border-t-purple-500 animate-spin" />
           </div>
         ) : (
-          <RootRoutes
-            isAuthenticated={isAuthenticated}
-            handleLogin={handleLogin}
-            shellValue={shellValue}
-            profileData={profileData}
-            userRole={userRole}
-            isMenuOpen={isMenuOpen}
-            setIsMenuOpen={setIsMenuOpen}
-          />
+          <div className="flex h-full min-h-0 flex-1 flex-col w-full overflow-hidden">
+            <RootRoutes
+              isAuthenticated={isAuthenticated}
+              handleLogin={handleLogin}
+              shellValue={shellValue}
+              profileData={profileData}
+              userRole={userRole}
+              isMenuOpen={isMenuOpen}
+              setIsMenuOpen={setIsMenuOpen}
+            />
+          </div>
         )}
       </div>
     </ThemeProvider>

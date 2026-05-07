@@ -66,7 +66,9 @@ export function ProtectedLayout({
   return (
     <>
       <AppShellProvider value={shellValue}>
-        <Outlet />
+        <div className="flex h-full min-h-0 flex-1 flex-col w-full overflow-hidden">
+          <Outlet />
+        </div>
       </AppShellProvider>
       <SideMenu
         isOpen={isMenuOpen}
