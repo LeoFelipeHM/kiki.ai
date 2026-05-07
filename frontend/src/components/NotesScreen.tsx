@@ -1,23 +1,21 @@
-import { Plus, Search, Menu, Trash2, X, Pin, Share2, Lock, Hash, Calendar, Clock, MoreVertical, ChevronRight } from 'lucide-react';
+import { Plus, Search, Menu, Trash2, X, Pin, Lock, Hash, Calendar, Clock, MoreVertical } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { VoiceChatOrb } from './VoiceChatOrb';
 import { useTheme } from './ThemeProvider';
-
-interface Note {
-  id: number;
-  title: string;
-  content: string;
-  createdAt: Date;
-  updatedAt: Date;
-  isPinned: boolean;
-  tags: string[];
-  isLocked: boolean;
-}
+import { AuthSessionExpiredError } from '@/services/auth';
+import {
+  createNote,
+  deleteNote,
+  fetchNotes,
+  patchNote,
+  type Note,
+} from '@/services/notes';
 
 interface NotesScreenProps {
   onOpenMenu?: () => void;
   onNavigateToProfile?: () => void;
   onNavigateToHome?: () => void;
+  onSessionExpired?: () => void;
   userName?: string;
 }
 
@@ -27,60 +25,49 @@ interface GroupedNotes {
   };
 }
 
-export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, userName = 'Maria Silva' }: NotesScreenProps) {
+export function NotesScreen({
+  onOpenMenu,
+  onNavigateToProfile,
+  onNavigateToHome,
+  onSessionExpired,
+  userName = 'Maria Silva',
+}: NotesScreenProps) {
   const { themeColor } = useTheme();
-  const [notes, setNotes] = useState<Note[]>([
-    {
-      id: 1,
-      title: 'Ideias para o projeto',
-      content: 'Implementar sistema de notificações push\nAdicionar dark mode\nMelhorar performance do calendário',
-      createdAt: new Date('2026-05-01'),
-      updatedAt: new Date('2026-05-03'),
-      isPinned: true,
-      tags: ['trabalho', 'projeto'],
-      isLocked: false,
-    },
-    {
-      id: 2,
-      title: 'Lista de compras',
-      content: 'Café\nLeite\nPão\nFrutas\nVerduras',
-      createdAt: new Date('2026-05-02'),
-      updatedAt: new Date('2026-05-02'),
-      isPinned: false,
-      tags: ['pessoal'],
-      isLocked: false,
-    },
-    {
-      id: 3,
-      title: 'Reunião com cliente',
-      content: 'Discutir novos requisitos\nApresentar protótipo\nDefinir cronograma\nOrçamento revisado',
-      createdAt: new Date('2026-04-28'),
-      updatedAt: new Date('2026-04-30'),
-      isPinned: true,
-      tags: ['trabalho', 'reunião'],
-      isLocked: false,
-    },
-    {
-      id: 4,
-      title: 'Metas 2025',
-      content: 'Aprender piano\nLer 24 livros\nViajar para 3 países\nMelhorar fitness',
-      createdAt: new Date('2025-12-28'),
-      updatedAt: new Date('2025-12-31'),
-      isPinned: false,
-      tags: ['pessoal', 'metas'],
-      isLocked: false,
-    },
-  ]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
-  const [showNoteMenu, setShowNoteMenu] = useState<number | null>(null);
-  const [swipedNote, setSwipedNote] = useState<number | null>(null);
+  const [showNoteMenu, setShowNoteMenu] = useState<string | null>(null);
   const [searchInNote, setSearchInNote] = useState('');
   const [newTag, setNewTag] = useState('');
-  const [showShareMenu, setShowShareMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const list = await fetchNotes();
+        if (!cancelled) setNotes(list);
+      } catch (e) {
+        if (e instanceof AuthSessionExpiredError) {
+          onSessionExpired?.();
+          return;
+        }
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Erro ao carregar notas.');
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [onSessionExpired]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -100,12 +87,8 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (showShareMenu) {
-          setShowShareMenu(false);
-        } else if (editingNote) {
-          handleCancelEdit();
-        }
+      if (event.key === 'Escape' && editingNote) {
+        handleCancelEdit();
       }
     };
 
@@ -114,7 +97,7 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
     return () => {
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [editingNote, showShareMenu]);
+  }, [editingNote]);
 
   const filteredNotes = notes.filter(
     (note) =>
@@ -148,7 +131,7 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
 
   const handleCreateNote = () => {
     const newNote: Note = {
-      id: Math.max(...notes.map((n) => n.id), 0) + 1,
+      id: '',
       title: '',
       content: '',
       createdAt: new Date(),
@@ -159,6 +142,7 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
     };
     setEditingNote(newNote);
     setIsCreatingNew(true);
+    setActionError(null);
   };
 
   const handleEditNote = (note: Note) => {
@@ -170,36 +154,67 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
     setEditingNote({ ...note });
     setIsCreatingNew(false);
     setSearchInNote('');
+    setActionError(null);
   };
 
-  const handleSaveNote = () => {
+  const handleSaveNote = async () => {
     if (!editingNote) return;
 
-    if (isCreatingNew) {
-      setNotes((prev) => [editingNote, ...prev]);
-    } else {
-      setNotes((prev) =>
-        prev.map((n) =>
-          n.id === editingNote.id ? { ...editingNote, updatedAt: new Date() } : n
-        )
-      );
-    }
+    setActionError(null);
+    try {
+      if (isCreatingNew) {
+        const created = await createNote({
+          title: editingNote.title,
+          content: editingNote.content,
+          isPinned: editingNote.isPinned,
+          isLocked: editingNote.isLocked,
+          tags: editingNote.tags,
+        });
+        setNotes((prev) => [created, ...prev]);
+      } else {
+        const updated = await patchNote(editingNote.id, {
+          title: editingNote.title,
+          content: editingNote.content,
+          isPinned: editingNote.isPinned,
+          isLocked: editingNote.isLocked,
+          tags: editingNote.tags,
+        });
+        setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+      }
 
-    setEditingNote(null);
-    setIsCreatingNew(false);
-    setSearchInNote('');
+      setEditingNote(null);
+      setIsCreatingNew(false);
+      setSearchInNote('');
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setActionError(e instanceof Error ? e.message : 'Não foi possível salvar.');
+    }
   };
 
-  const handleDeleteNote = (id: number) => {
+  const handleDeleteNote = async (id: string) => {
+    if (!id) return;
     const confirmDelete = window.confirm('Excluir esta nota permanentemente?');
     if (!confirmDelete) return;
 
-    setNotes((prev) => prev.filter((n) => n.id !== id));
-    if (editingNote?.id === id) {
-      setEditingNote(null);
-      setIsCreatingNew(false);
+    setActionError(null);
+    try {
+      await deleteNote(id);
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+      if (editingNote?.id === id) {
+        setEditingNote(null);
+        setIsCreatingNew(false);
+      }
+      setShowNoteMenu(null);
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setActionError(e instanceof Error ? e.message : 'Não foi possível excluir.');
     }
-    setShowNoteMenu(null);
   };
 
   const handleCancelEdit = () => {
@@ -208,27 +223,48 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
     setSearchInNote('');
   };
 
-  const togglePinNote = (id: number) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isPinned: !n.isPinned } : n))
-    );
-    if (editingNote?.id === id) {
-      setEditingNote((prev) => prev ? { ...prev, isPinned: !prev.isPinned } : null);
+  const togglePinNote = async (id: string) => {
+    if (!id) {
+      setEditingNote((prev) => (prev ? { ...prev, isPinned: !prev.isPinned } : null));
+      return;
     }
+
+    const current = notes.find((n) => n.id === id);
+    if (!current) return;
+
+    setActionError(null);
     setShowNoteMenu(null);
-  };
-
-  const toggleLockNote = (id: number) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isLocked: !n.isLocked } : n))
-    );
-    if (editingNote?.id === id) {
-      setEditingNote((prev) => prev ? { ...prev, isLocked: !prev.isLocked } : null);
+    try {
+      const updated = await patchNote(id, { isPinned: !current.isPinned });
+      setNotes((prev) => prev.map((n) => (n.id === id ? updated : n)));
+      setEditingNote((prev) => (prev?.id === id ? updated : prev));
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setActionError(e instanceof Error ? e.message : 'Não foi possível atualizar.');
     }
   };
 
-  const handleShareNote = () => {
-    setShowShareMenu(true);
+  const toggleLockNote = async (id: string) => {
+    if (!id) return;
+
+    const current = notes.find((n) => n.id === id);
+    if (!current) return;
+
+    setActionError(null);
+    try {
+      const updated = await patchNote(id, { isLocked: !current.isLocked });
+      setNotes((prev) => prev.map((n) => (n.id === id ? updated : n)));
+      setEditingNote((prev) => (prev?.id === id ? updated : prev));
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setActionError(e instanceof Error ? e.message : 'Não foi possível atualizar.');
+    }
   };
 
   const addTagToNote = () => {
@@ -338,10 +374,20 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
               className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
             />
           </div>
+          {loadError ? (
+            <p className="text-sm text-red-500 px-5 pb-2 mt-2" role="alert">
+              {loadError}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {filteredNotes.length === 0 ? (
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
+              <div className={`w-10 h-10 border-2 border-muted-foreground/30 border-t-purple-500 rounded-full animate-spin`} />
+              <span className="text-sm">Carregando notas…</span>
+            </div>
+          ) : filteredNotes.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-8">
               <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${themeColor} opacity-20 flex items-center justify-center mb-4`}>
                 <Search className="w-10 h-10 text-white" />
@@ -430,13 +476,6 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
                             >
                               <Pin className="w-4 h-4" />
                               Desfixar
-                            </button>
-                            <button
-                              onClick={() => handleShareNote()}
-                              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted btn-apple text-left"
-                            >
-                              <Share2 className="w-4 h-4" />
-                              Compartilhar
                             </button>
                             <button
                               onClick={() => handleDeleteNote(note.id)}
@@ -529,13 +568,6 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
                                       Fixar
                                     </button>
                                     <button
-                                      onClick={() => handleShareNote()}
-                                      className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-muted btn-apple text-left"
-                                    >
-                                      <Share2 className="w-4 h-4" />
-                                      Compartilhar
-                                    </button>
-                                    <button
                                       onClick={() => handleDeleteNote(note.id)}
                                       className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-red-50 text-red-500 btn-apple text-left"
                                     >
@@ -585,12 +617,6 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
                     }`}
                   >
                     <Pin className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={handleShareNote}
-                    className="w-9 h-9 rounded-full hover:bg-muted flex items-center justify-center btn-apple transition-colors"
-                  >
-                    <Share2 className="w-4 h-4" />
                   </button>
                   {!isCreatingNew && (
                     <button
@@ -695,15 +721,24 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
                   placeholder="Comece a escrever..."
                   rows={14}
                   className="w-full px-0 py-0 text-base leading-relaxed bg-transparent border-0 focus:outline-none resize-none placeholder:text-muted-foreground"
-                >
-                  {searchInNote
-                    ? highlightSearchText(editingNote.content, searchInNote)
-                    : editingNote.content}
-                </textarea>
+                />
+                {searchInNote.trim() ? (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Pré-visualização da busca:{' '}
+                    <span className="text-foreground whitespace-pre-wrap">
+                      {highlightSearchText(editingNote.content, searchInNote.trim())}
+                    </span>
+                  </p>
+                ) : null}
               </div>
             </div>
 
             <div className="flex-shrink-0 bg-background border-t border-border px-6 py-4 rounded-b-3xl">
+              {actionError ? (
+                <p className="text-sm text-red-500 mb-3" role="alert">
+                  {actionError}
+                </p>
+              ) : null}
               <div className="flex gap-3">
                 <button
                   onClick={handleCancelEdit}
@@ -719,68 +754,6 @@ export function NotesScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome,
                   {isCreatingNew ? 'Criar nota' : 'Salvar'}
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showShareMenu && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[110] flex items-center justify-center p-4 transition-all duration-200 ease-out"
-          onClick={() => setShowShareMenu(false)}
-          style={{ animation: 'fadeIn 200ms ease-out' }}
-        >
-          <div
-            className="bg-background rounded-3xl w-full max-w-md p-6 shadow-2xl transition-all duration-200 ease-out"
-            onClick={(e) => e.stopPropagation()}
-            style={{ animation: 'scaleIn 200ms ease-out' }}
-          >
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-semibold">Compartilhar nota</h3>
-              <button
-                onClick={() => setShowShareMenu(false)}
-                className="w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center btn-apple transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-2">
-              <button
-                onClick={() => {
-                  // Copiar link
-                  setShowShareMenu(false);
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-muted hover:bg-muted/80 btn-apple text-left transition-colors"
-              >
-                <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white">
-                  <Share2 className="w-5 h-5" />
-                </div>
-                <span className="text-sm font-medium">Copiar link</span>
-              </button>
-              <button
-                onClick={() => {
-                  // Enviar email
-                  setShowShareMenu(false);
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-muted hover:bg-muted/80 btn-apple text-left transition-colors"
-              >
-                <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white">
-                  <Share2 className="w-5 h-5" />
-                </div>
-                <span className="text-sm font-medium">Enviar por e-mail</span>
-              </button>
-              <button
-                onClick={() => {
-                  // Exportar PDF
-                  setShowShareMenu(false);
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-muted hover:bg-muted/80 btn-apple text-left transition-colors"
-              >
-                <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${themeColor} flex items-center justify-center text-white`}>
-                  <Share2 className="w-5 h-5" />
-                </div>
-                <span className="text-sm font-medium">Exportar como PDF</span>
-              </button>
             </div>
           </div>
         </div>

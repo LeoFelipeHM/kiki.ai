@@ -1,15 +1,53 @@
-import { ChevronLeft, ChevronRight, Plus, Clock, AlertCircle, Sparkles, X, Users, Menu } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Plus, AlertCircle, Sparkles, X, Users, Menu, ZoomIn, ZoomOut } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { format, isSameDay, parseISO, startOfDay } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { VoiceChatOrb } from './VoiceChatOrb';
 
-import type { CalendarEvent } from '@/types/calendar';
+import {
+  buildIsoRange,
+  dayKeyFromDate,
+  fetchRangeIncludingToday,
+  formatCalendarTitle,
+  mergeEventsById,
+  monthGridCells,
+  moveEventToSlot,
+  placement,
+  resizeEventDuration,
+  shiftAnchor,
+  weekColumns,
+  weekStartForDate,
+  eventsForDay,
+  eventsTouchingMonth,
+} from '@/lib/calendarUtils';
+import {
+  createCalendarEvent,
+  deleteCalendarEvent,
+  fetchCalendarEvents,
+  patchCalendarEvent,
+} from '@/services/calendar';
+import { AuthSessionExpiredError } from '@/services/auth';
+import type { CalendarEvent, CalendarEventType } from '@/types/calendar';
+
+interface EditingDraft {
+  id: string;
+  title: string;
+  dateKey: string;
+  startHour: number;
+  duration: number;
+  type: CalendarEventType;
+  guests: string[];
+  description: string;
+  color: string;
+}
 
 interface CalendarScreenProps {
   onOpenMenu?: () => void;
   onNavigateToProfile?: () => void;
   onNavigateToHome?: () => void;
+  onSessionExpired?: () => void;
   initialViewMode?: 'day' | 'week' | 'month' | 'year';
   events: CalendarEvent[];
   setEvents: React.Dispatch<React.SetStateAction<CalendarEvent[]>>;
@@ -29,19 +67,59 @@ const PASTEL_COLORS = [
   { name: 'Pêssego', value: 'bg-orange-500' },
 ];
 
-const HOUR_HEIGHT = 60;
+const DEFAULT_HOUR_HEIGHT = 60;
+const MIN_HOUR_HEIGHT = 28;
+const MAX_HOUR_HEIGHT = 120;
+const HOUR_HEIGHT_ZOOM_STEP = 6;
+const QUARTER_STEP = 0.25;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
+/** Início do dia em incrementos de 15 min (00:00 … 23:45). */
+const START_HOUR_OPTIONS = Array.from({ length: 96 }, (_, i) => i * QUARTER_STEP);
+/** Durações de 15 em 15 min até 12 h. */
+const DURATION_OPTIONS = Array.from({ length: 48 }, (_, i) => (i + 1) * QUARTER_STEP);
+
+function formatHourOptionLabel(h: number): string {
+  const hh = Math.floor(h);
+  const mm = Math.round((h - hh) * 60);
+  return `${hh.toString().padStart(2, '0')}:${mm.toString().padStart(2, '0')}`;
+}
+
+function formatDurationLabel(d: number): string {
+  const totalMin = Math.round(d * 60);
+  if (totalMin < 60) return `${totalMin} min`;
+  const h = Math.floor(d);
+  const m = Math.round((d - h) * 60);
+  if (m === 0) return h === 1 ? '1 h' : `${h} h`;
+  return `${h} h ${m} min`;
+}
+
+function snapQuarterHour(h: number): number {
+  return Math.round(Math.min(Math.max(h, 0), 23.75) * 4) / 4;
+}
+
+function pixelYToSnappedHour(y: number, hourHeight: number): number {
+  const clamped = Math.max(0, Math.min(y, 24 * hourHeight - 1));
+  return snapQuarterHour(clamped / hourHeight);
+}
+
+function nearestDuration(d: number): number {
+  return DURATION_OPTIONS.reduce((best, x) => (Math.abs(x - d) < Math.abs(best - d) ? x : best));
+}
+
 function EventCard({
   event,
+  hourHeight,
   onClick,
   onResize,
 }: {
   event: CalendarEvent;
+  hourHeight: number;
   onClick: () => void;
-  onResize: (id: number, newDuration: number) => void;
+  onResize: (id: string, newDuration: number) => void;
 }) {
+  const placed = placement(event);
   const [{ isDragging }, drag] = useDrag(() => ({
     type: 'event',
     item: { id: event.id },
@@ -65,15 +143,15 @@ function EventCard({
     e.stopPropagation();
     setIsResizing(true);
     setResizeStartY(e.clientY);
-    setInitialDuration(event.duration);
+    setInitialDuration(placed.duration);
   };
 
   const handleResizeMove = (e: MouseEvent) => {
     if (!isResizing) return;
 
     const deltaY = e.clientY - resizeStartY;
-    const hoursDelta = Math.round(deltaY / HOUR_HEIGHT * 2) / 2; // Snap para 30 minutos
-    const newDuration = Math.max(0.5, initialDuration + hoursDelta);
+    const hoursDelta = Math.round((deltaY / hourHeight) * 4) / 4;
+    const newDuration = Math.max(QUARTER_STEP, initialDuration + hoursDelta);
 
     onResize(event.id, newDuration);
   };
@@ -92,20 +170,22 @@ function EventCard({
         document.removeEventListener('mouseup', handleResizeEnd);
       };
     }
-  }, [isResizing, resizeStartY, initialDuration]);
+  }, [isResizing, resizeStartY, initialDuration, hourHeight]);
 
-  const maxLines = Math.floor((event.duration * HOUR_HEIGHT - 20) / 12);
+  const maxLines = Math.max(1, Math.floor((placed.duration * hourHeight - 20) / 12));
 
   return (
     <div
-      ref={drag}
+      ref={(node) => {
+        drag(node);
+      }}
       onClick={handleClick}
       className={`absolute left-1 right-1 rounded p-2 cursor-pointer event-card-apple ${
         event.color || EVENT_COLORS[event.type]
       } text-white shadow-md ${isDragging || isResizing ? 'opacity-50 scale-95' : 'opacity-100'}`}
       style={{
-        top: `${event.startHour * HOUR_HEIGHT + 2}px`,
-        height: `${event.duration * HOUR_HEIGHT - 4}px`,
+        top: `${placed.startHour * hourHeight + 2}px`,
+        height: `${placed.duration * hourHeight - 4}px`,
         zIndex: isDragging || isResizing ? 50 : 10,
       }}
     >
@@ -133,109 +213,268 @@ function EventCard({
   );
 }
 
-function TimeSlot({
-  day,
-  hour,
-  onDrop,
-  hasEvent,
-  onClick,
+function CalendarHeaderDayDrop({
+  dayKey,
+  onDropKeepTime,
+  className,
+  children,
 }: {
-  day: number;
-  hour: number;
-  onDrop: (eventId: number, day: number, hour: number) => void;
-  hasEvent: boolean;
-  onClick: () => void;
+  dayKey: string;
+  onDropKeepTime: (eventId: string, dayKey: string) => void;
+  className?: string;
+  children: React.ReactNode;
 }) {
-  const [{ isOver }, drop] = useDrop(() => ({
-    accept: 'event',
-    drop: (item: { id: number }) => onDrop(item.id, day, hour),
-    collect: (monitor) => ({
-      isOver: monitor.isOver(),
+  const [{ isOver }, drop] = useDrop(
+    () => ({
+      accept: 'event',
+      drop: (item: { id: string }) => onDropKeepTime(item.id, dayKey),
+      collect: (monitor) => ({ isOver: monitor.isOver({ shallow: true }) }),
     }),
-  }));
-
+    [dayKey, onDropKeepTime],
+  );
   return (
     <div
-      ref={drop}
-      className={`border-b border-border transition-all cursor-pointer ${
-        isOver ? 'bg-purple-100 dark:bg-purple-900/20 border-purple-500' : hasEvent ? '' : 'hover:bg-muted/50'
+      ref={(node) => {
+        drop(node);
+      }}
+      className={`${className ?? ''} ${isOver ? 'ring-2 ring-purple-500/80 ring-inset bg-purple-500/10 rounded-xl' : ''}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function MonthEventChip({ event, onOpen }: { event: CalendarEvent; onOpen: () => void }) {
+  const [{ isDragging }, drag] = useDrag(() => ({
+    type: 'event',
+    item: { id: event.id },
+    collect: (monitor) => ({ isDragging: monitor.isDragging() }),
+  }));
+  return (
+    <div
+      ref={(node) => {
+        drag(node);
+      }}
+      role="button"
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className={`w-full text-left text-[8px] px-1 py-0.5 rounded ${event.color || EVENT_COLORS[event.type]} text-white truncate cursor-grab active:cursor-grabbing outline-none ${
+        isDragging ? 'opacity-50' : ''
       }`}
-      style={{ height: `${HOUR_HEIGHT}px` }}
-      onClick={() => !hasEvent && onClick()}
-    />
+    >
+      {event.title}
+    </div>
+  );
+}
+
+function MonthDayDroppable({
+  date,
+  isToday,
+  onDropKeepTime,
+  children,
+}: {
+  date: Date;
+  isToday: boolean;
+  onDropKeepTime: (eventId: string, dayKey: string) => void;
+  children: React.ReactNode;
+}) {
+  const dk = dayKeyFromDate(date);
+  const [{ isOver }, drop] = useDrop(
+    () => ({
+      accept: 'event',
+      drop: (item: { id: string }) => onDropKeepTime(item.id, dk),
+      collect: (monitor) => ({ isOver: monitor.isOver() }),
+    }),
+    [dk, onDropKeepTime],
+  );
+  return (
+    <div
+      ref={(node) => {
+        drop(node);
+      }}
+      className={`aspect-square rounded-xl p-2 border transition-all ${
+        isToday
+          ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white border-purple-500'
+          : 'border-border hover:border-purple-500/50'
+      } ${isOver ? 'ring-2 ring-purple-400 scale-[1.02] z-10' : ''}`}
+    >
+      {children}
+    </div>
   );
 }
 
 function DayColumn({
-  day,
-  dayName,
+  dayKey,
   events,
+  hourHeight,
   onDrop,
   conflicts,
   onSlotClick,
   onEventClick,
   onEventResize,
 }: {
-  day: number;
-  dayName: string;
+  dayKey: string;
   events: CalendarEvent[];
-  onDrop: (eventId: number, day: number, hour: number) => void;
+  hourHeight: number;
+  onDrop: (eventId: string, dayKey: string, startHour: number) => void;
   conflicts: number[];
-  onSlotClick: (day: number, hour: number) => void;
+  onSlotClick: (dayKey: string, startHour: number) => void;
   onEventClick: (event: CalendarEvent) => void;
-  onEventResize: (id: number, newDuration: number) => void;
+  onEventResize: (id: string, newDuration: number) => void;
 }) {
-  return (
-    <div className="relative h-full">
-      {HOURS.map((hour) => {
-        const hasEvent = events.some((e) => e.day === day && e.startHour === hour);
-        const hasConflict = conflicts.includes(hour);
-        return (
-          <div key={hour} className="relative">
-            <TimeSlot
-              day={day}
-              hour={hour}
-              onDrop={onDrop}
-              hasEvent={hasEvent}
-              onClick={() => onSlotClick(day, hour)}
-            />
-            {hasConflict && (
-              <div className="absolute top-1 right-1 z-30">
-                <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center shadow-lg">
-                  <AlertCircle className="w-3 h-3 text-white" />
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+  const columnRef = useRef<HTMLDivElement>(null);
+  const dayEvents = events.filter((e) => placement(e).dayKey === dayKey);
+  const gridHeight = 24 * hourHeight;
 
-      {events
-        .filter((e) => e.day === day)
-        .map((event) => (
-          <EventCard
-            key={event.id}
-            event={event}
-            onClick={() => onEventClick(event)}
-            onResize={onEventResize}
-          />
-        ))}
+  const [{ isOver }, drop] = useDrop(
+    () => ({
+      accept: 'event',
+      drop: (item: { id: string }, monitor) => {
+        const node = columnRef.current;
+        const cur = monitor.getClientOffset();
+        if (!node || !cur) return;
+        const bounds = node.getBoundingClientRect();
+        const y = cur.y - bounds.top;
+        onDrop(item.id, dayKey, pixelYToSnappedHour(y, hourHeight));
+      },
+      collect: (monitor) => ({
+        isOver: monitor.isOver({ shallow: true }),
+      }),
+    }),
+    [dayKey, hourHeight, onDrop],
+  );
+
+  const setDropRef = (node: HTMLDivElement | null) => {
+    drop(node);
+    columnRef.current = node;
+  };
+
+  const handleColumnClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('.event-card-apple')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    onSlotClick(dayKey, pixelYToSnappedHour(y, hourHeight));
+  };
+
+  return (
+    <div
+      ref={setDropRef}
+      role="presentation"
+      className={`relative w-full cursor-pointer transition-colors ${
+        isOver ? 'bg-purple-100/80 dark:bg-purple-900/25 ring-1 ring-inset ring-purple-400/50' : 'bg-transparent'
+      }`}
+      style={{ minHeight: gridHeight }}
+      onClick={handleColumnClick}
+    >
+      {HOURS.map((hour) => (
+        <div
+          key={hour}
+          className="pointer-events-none absolute left-0 right-0 z-[1] box-border border-b border-border"
+          style={{ top: hour * hourHeight, height: hourHeight }}
+        >
+          {[1, 2, 3].map((q) => (
+            <div
+              key={q}
+              className="absolute left-0 right-0 border-t border-border/45 dark:border-border/55"
+              style={{ top: q * (hourHeight / 4) }}
+            />
+          ))}
+        </div>
+      ))}
+
+      {conflicts.map((hour) => (
+        <div
+          key={`conf-${hour}`}
+          className="pointer-events-none absolute top-1 right-1 z-30"
+          style={{ top: hour * hourHeight + 4 }}
+        >
+          <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center shadow-lg">
+            <AlertCircle className="w-3 h-3 text-white" />
+          </div>
+        </div>
+      ))}
+
+      {dayEvents.map((event) => (
+        <EventCard
+          key={event.id}
+          event={event}
+          hourHeight={hourHeight}
+          onClick={() => onEventClick(event)}
+          onResize={onEventResize}
+        />
+      ))}
     </div>
   );
 }
 
-export function CalendarScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, initialViewMode = 'week', events, setEvents }: CalendarScreenProps) {
+export function CalendarScreen({
+  onOpenMenu,
+  onNavigateToProfile,
+  onNavigateToHome: _onNavigateToHome,
+  onSessionExpired,
+  initialViewMode = 'week',
+  events,
+  setEvents,
+}: CalendarScreenProps) {
   const [showKikiSuggestion, setShowKikiSuggestion] = useState(true);
   const [showConflictWarning, setShowConflictWarning] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [editingEvent, setEditingEvent] = useState<EditingDraft | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'year'>(initialViewMode);
+  const [anchorDate, setAnchorDate] = useState(() => new Date());
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
   const [showViewMenu, setShowViewMenu] = useState(false);
+  const [hourHeightPx, setHourHeightPx] = useState(DEFAULT_HOUR_HEIGHT);
+
   const viewMenuRef = useRef<HTMLDivElement>(null);
   const hoursScrollRef = useRef<HTMLDivElement>(null);
   const contentScrollRef = useRef<HTMLDivElement>(null);
-  const headerScrollRef = useRef<HTMLDivElement>(null);
-  const weekDays = Array.from({ length: 7 }, (_, i) => ({ day: 27 + i, name: WEEK_DAYS[i] }));
+
+  const todayKey = dayKeyFromDate(new Date());
+
+  const weekStart = useMemo(() => weekStartForDate(anchorDate), [anchorDate]);
+  const weekDayCols = useMemo(() => weekColumns(weekStart), [weekStart]);
+
+  const defaultNewDayKey = useCallback(() => {
+    if (viewMode === 'day') return dayKeyFromDate(startOfDay(anchorDate));
+    if (weekDayCols.some((c) => c.dayKey === todayKey)) return todayKey;
+    return weekDayCols[0]?.dayKey ?? todayKey;
+  }, [viewMode, anchorDate, weekDayCols, todayKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setSyncLoading(true);
+      setSyncError(null);
+      try {
+        const range = fetchRangeIncludingToday(anchorDate, viewMode);
+        const list = await fetchCalendarEvents(range.from, range.to);
+        if (!cancelled) setEvents((prev) => mergeEventsById(prev, list));
+      } catch (e) {
+        if (e instanceof AuthSessionExpiredError) {
+          onSessionExpired?.();
+        } else if (!cancelled) {
+          setSyncError(e instanceof Error ? e.message : 'Erro ao carregar eventos.');
+        }
+      } finally {
+        if (!cancelled) setSyncLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [anchorDate, viewMode, setEvents, onSessionExpired]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -268,95 +507,186 @@ export function CalendarScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHo
     }
   };
 
-  const handleDrop = (eventId: number, newDay: number, newHour: number) => {
-    setEvents((prev) => {
-      const updated = prev.map((event) =>
-        event.id === eventId ? { ...event, day: newDay, startHour: newHour } : event
-      );
+  const detectConflictsForDayKey = useCallback(
+    (dayKey: string): number[] => {
+      const dayEvents = events.filter((e) => placement(e).dayKey === dayKey);
+      const conflicts: number[] = [];
 
-      const hasConflicts = detectConflicts(newDay).length > 0;
-      setShowConflictWarning(hasConflicts);
+      dayEvents.forEach((event1) => {
+        dayEvents.forEach((event2) => {
+          if (event1.id !== event2.id) {
+            const p1 = placement(event1);
+            const p2 = placement(event2);
+            const event1End = p1.startHour + p1.duration;
+            const event2End = p2.startHour + p2.duration;
 
-      return updated;
-    });
-  };
-
-  const detectConflicts = (day: number): number[] => {
-    const dayEvents = events.filter((e) => e.day === day);
-    const conflicts: number[] = [];
-
-    dayEvents.forEach((event1) => {
-      dayEvents.forEach((event2) => {
-        if (event1.id !== event2.id) {
-          const event1End = event1.startHour + event1.duration;
-          const event2End = event2.startHour + event2.duration;
-
-          if (
-            (event1.startHour < event2End && event1End > event2.startHour) ||
-            (event2.startHour < event1End && event2End > event1.startHour)
-          ) {
-            conflicts.push(event1.startHour);
-            conflicts.push(event2.startHour);
+            if (
+              (p1.startHour < event2End && event1End > p2.startHour) ||
+              (p2.startHour < event1End && event2End > p1.startHour)
+            ) {
+              conflicts.push(Math.floor(p1.startHour));
+              conflicts.push(Math.floor(p2.startHour));
+            }
           }
-        }
+        });
       });
+
+      return [...new Set(conflicts)];
+    },
+    [events],
+  );
+
+  const handleDrop = async (eventId: string, newDayKey: string, newHour: number) => {
+    const snapped = snapQuarterHour(newHour);
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev) return;
+    const moved = moveEventToSlot(ev, newDayKey, snapped);
+    try {
+      setActionLoading(true);
+      const updated = await patchCalendarEvent(eventId, {
+        startsAt: moved.startsAt,
+        endsAt: moved.endsAt,
+      });
+      setEvents((prev) => mergeEventsById(prev, [updated]));
+      const hasConflicts = detectConflictsForDayKey(newDayKey).length > 0;
+      setShowConflictWarning(hasConflicts);
+      if (viewMode === 'day') {
+        const [y, m, d] = newDayKey.split('-').map(Number);
+        setAnchorDate(new Date(y, m - 1, d));
+      }
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
+      else setSyncError(e instanceof Error ? e.message : 'Erro ao mover evento.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDropKeepTime = (eventId: string, newDayKey: string) => {
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev) return;
+    void handleDrop(eventId, newDayKey, snapQuarterHour(placement(ev).startHour));
+  };
+
+  const applyKikiSuggestion = async () => {
+    const target = events.find((e) => e.title === 'Foco profundo');
+    if (!target) {
+      setShowKikiSuggestion(false);
+      return;
+    }
+    const { duration } = placement(target);
+    const dk = dayKeyFromDate(parseISO(target.startsAt));
+    const { startsAt, endsAt } = buildIsoRange(dk, 9, duration);
+    try {
+      setActionLoading(true);
+      const updated = await patchCalendarEvent(target.id, { startsAt, endsAt });
+      setEvents((prev) => mergeEventsById(prev, [updated]));
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
+      else setSyncError(e instanceof Error ? e.message : 'Erro ao aplicar sugestão.');
+    } finally {
+      setActionLoading(false);
+      setShowKikiSuggestion(false);
+    }
+  };
+
+  const openDraftFromEvent = (event: CalendarEvent) => {
+    const p = placement(event);
+    setEditingEvent({
+      id: event.id,
+      title: event.title,
+      dateKey: p.dayKey,
+      startHour: snapQuarterHour(p.startHour),
+      duration: nearestDuration(p.duration),
+      type: event.type,
+      guests: [...(event.guests ?? [])],
+      description: event.description ?? '',
+      color: event.color ?? PASTEL_COLORS[0].value,
     });
-
-    return [...new Set(conflicts)];
+    setIsCreatingNew(false);
   };
 
-  const applyKikiSuggestion = () => {
-    setEvents((prev) =>
-      prev.map((event) =>
-        event.title === 'Foco profundo' ? { ...event, startHour: 9 } : event
-      )
-    );
-    setShowKikiSuggestion(false);
-  };
-
-  const handleSlotClick = (day: number, hour: number) => {
-    const newEvent: CalendarEvent = {
-      id: Math.max(...events.map((e) => e.id), 0) + 1,
+  const handleSlotClick = (dayKey: string, hour: number) => {
+    setEditingEvent({
+      id: '',
       title: '',
-      day,
+      dateKey: dayKey,
       startHour: hour,
       duration: 1,
       type: 'task',
+      guests: [],
+      description: '',
       color: PASTEL_COLORS[0].value,
-    };
-    setEditingEvent(newEvent);
+    });
     setIsCreatingNew(true);
   };
 
   const handleEventClick = (event: CalendarEvent) => {
-    setEditingEvent({ ...event, color: event.color || PASTEL_COLORS[0].value });
-    setIsCreatingNew(false);
+    openDraftFromEvent(event);
   };
 
-  const handleSaveEvent = () => {
-    if (!editingEvent) return;
+  const handleSaveEvent = async () => {
+    if (!editingEvent || !editingEvent.title.trim()) return;
 
-    if (isCreatingNew) {
-      setEvents((prev) => [...prev, editingEvent]);
-    } else {
-      setEvents((prev) =>
-        prev.map((e) => (e.id === editingEvent.id ? editingEvent : e))
-      );
+    const { startsAt, endsAt } = buildIsoRange(
+      editingEvent.dateKey,
+      editingEvent.startHour,
+      editingEvent.duration,
+    );
+    const guestsPayload = editingEvent.guests.filter(Boolean).map((name) => ({ name }));
+
+    try {
+      setActionLoading(true);
+      setSyncError(null);
+      if (isCreatingNew) {
+        const created = await createCalendarEvent({
+          title: editingEvent.title.trim(),
+          startsAt,
+          endsAt,
+          eventType: editingEvent.type,
+          color: editingEvent.color,
+          description: editingEvent.description.trim() || null,
+          guests: guestsPayload,
+        });
+        setEvents((prev) => mergeEventsById(prev, [created]));
+      } else {
+        const updated = await patchCalendarEvent(editingEvent.id, {
+          title: editingEvent.title.trim(),
+          startsAt,
+          endsAt,
+          eventType: editingEvent.type,
+          color: editingEvent.color,
+          description: editingEvent.description.trim() || null,
+          guests: guestsPayload,
+        });
+        setEvents((prev) => mergeEventsById(prev, [updated]));
+      }
+
+      setEditingEvent(null);
+      setIsCreatingNew(false);
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
+      else setSyncError(e instanceof Error ? e.message : 'Erro ao salvar.');
+    } finally {
+      setActionLoading(false);
     }
-
-    setEditingEvent(null);
-    setIsCreatingNew(false);
   };
 
-  const handleDeleteEvent = () => {
-    if (!editingEvent) return;
+  const handleDeleteEvent = async () => {
+    if (!editingEvent || isCreatingNew || !editingEvent.id) return;
 
-    if (!isCreatingNew) {
+    try {
+      setActionLoading(true);
+      await deleteCalendarEvent(editingEvent.id);
       setEvents((prev) => prev.filter((e) => e.id !== editingEvent.id));
+      setEditingEvent(null);
+      setIsCreatingNew(false);
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
+      else setSyncError(e instanceof Error ? e.message : 'Erro ao excluir.');
+    } finally {
+      setActionLoading(false);
     }
-
-    setEditingEvent(null);
-    setIsCreatingNew(false);
   };
 
   const handleCancelEdit = () => {
@@ -364,530 +694,638 @@ export function CalendarScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHo
     setIsCreatingNew(false);
   };
 
-  const handleEventResize = (id: number, newDuration: number) => {
-    setEvents((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, duration: newDuration } : e))
-    );
+  const handleEventResize = async (id: string, newDuration: number) => {
+    const ev = events.find((e) => e.id === id);
+    if (!ev) return;
+    const snapped = Math.max(QUARTER_STEP, Math.round(newDuration * 4) / 4);
+    const resized = resizeEventDuration(ev, snapped);
+    try {
+      const updated = await patchCalendarEvent(id, {
+        startsAt: resized.startsAt,
+        endsAt: resized.endsAt,
+      });
+      setEvents((prev) => mergeEventsById(prev, [updated]));
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
+      else setSyncError(e instanceof Error ? e.message : 'Erro ao redimensionar.');
+    }
   };
+
+  const monthCells = useMemo(() => monthGridCells(startOfDay(new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1))), [anchorDate]);
+  const calendarTitle = formatCalendarTitle(anchorDate, viewMode);
+  const dayViewKey = dayKeyFromDate(startOfDay(anchorDate));
+  const dayViewWeekStrip = useMemo(() => weekColumns(weekStartForDate(anchorDate)), [anchorDate]);
+
+  const shift = (dir: -1 | 1) => setAnchorDate((d) => shiftAnchor(d, viewMode, dir));
 
   return (
     <>
       <DndProvider backend={HTML5Backend}>
         <div className="flex-1 flex flex-col bg-background overflow-hidden">
-        <div className="px-5 pt-6 pb-3 border-b border-border bg-background">
-          <div className="flex items-center justify-between mb-4">
-            <button
-              onClick={onOpenMenu}
-              className="w-10 h-10 rounded-xl hover:bg-muted/50 flex items-center justify-center btn-apple transition-colors"
-            >
-              <Menu className="w-5 h-5 text-muted-foreground" />
-            </button>
-            <h1 className="text-base font-medium text-muted-foreground">Kiki</h1>
-            <button
-              onClick={onNavigateToProfile}
-              className={`w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm btn-apple-gradient shadow-sm`}
-            >
-              <span className="text-white font-medium">M</span>
-            </button>
-          </div>
+          <div className="px-5 pt-6 pb-3 border-b border-border bg-background">
+            <div className="flex items-center justify-between mb-4">
+              <button
+                type="button"
+                onClick={onOpenMenu}
+                className="w-10 h-10 rounded-xl hover:bg-muted/50 flex items-center justify-center btn-apple transition-colors"
+              >
+                <Menu className="w-5 h-5 text-muted-foreground" />
+              </button>
+              <h1 className="text-base font-medium text-muted-foreground">Kiki</h1>
+              <button
+                type="button"
+                onClick={onNavigateToProfile}
+                className={`w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm btn-apple-gradient shadow-sm`}
+              >
+                <span className="text-white font-medium">M</span>
+              </button>
+            </div>
 
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold">Planejamento</h2>
-            <button
-              onClick={() => {
-                setEditingEvent({
-                  id: Date.now(),
-                  title: '',
-                  day: 28,
-                  startHour: 9,
-                  duration: 1,
-                  type: 'task',
-                  color: PASTEL_COLORS[0].value,
-                });
-                setIsCreatingNew(true);
-              }}
-              className={`flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-xl btn-apple-gradient shadow-md hover:shadow-lg transition-all`}
-            >
-              <Plus className="w-4 h-4" />
-              <span className="text-sm font-medium">Novo</span>
-            </button>
-          </div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">Planejamento</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  const dk = defaultNewDayKey();
+                  setEditingEvent({
+                    id: '',
+                    title: '',
+                    dateKey: dk,
+                    startHour: 9,
+                    duration: 1,
+                    type: 'task',
+                    guests: [],
+                    description: '',
+                    color: PASTEL_COLORS[0].value,
+                  });
+                  setIsCreatingNew(true);
+                }}
+                disabled={actionLoading}
+                className={`flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-xl btn-apple-gradient shadow-md hover:shadow-lg transition-all disabled:opacity-50`}
+              >
+                <Plus className="w-4 h-4" />
+                <span className="text-sm font-medium">Novo</span>
+              </button>
+            </div>
 
-          <div className="flex items-center justify-between mb-3 relative" ref={viewMenuRef}>
-            <button className="w-9 h-9 rounded-xl bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple transition-colors">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setShowViewMenu(!showViewMenu)}
-              className="hover:bg-muted px-4 py-2 rounded-xl btn-apple transition-colors"
-            >
-              <h3 className="text-sm font-medium">
-                {viewMode === 'day'
-                  ? '28 de Abril 2026'
-                  : viewMode === 'week'
-                  ? 'Semana - Abril 2026'
-                  : viewMode === 'month'
-                  ? 'Abril 2026'
-                  : '2026'}
-              </h3>
-            </button>
-            <button className="w-9 h-9 rounded-xl bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple transition-colors">
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            <div className="flex items-center justify-between mb-3 relative" ref={viewMenuRef}>
+              <button
+                type="button"
+                onClick={() => shift(-1)}
+                className="w-9 h-9 rounded-xl bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowViewMenu(!showViewMenu)}
+                className="hover:bg-muted px-4 py-2 rounded-xl btn-apple transition-colors capitalize"
+              >
+                <h3 className="text-sm font-medium">{calendarTitle}</h3>
+              </button>
+              <button
+                type="button"
+                onClick={() => shift(1)}
+                className="w-9 h-9 rounded-xl bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
 
-            {showViewMenu && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 bg-background border border-border rounded-lg shadow-lg overflow-hidden z-[200] min-w-[110px]">
-                {(['day', 'week', 'month', 'year'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => {
-                      setViewMode(mode);
-                      setShowViewMenu(false);
-                    }}
-                    className={`w-full px-3 py-1.5 text-xs text-left hover:bg-muted btn-apple ${
-                      viewMode === mode ? 'bg-purple-500/10 text-purple-500' : ''
-                    }`}
-                  >
-                    {mode === 'day' ? 'Dia' : mode === 'week' ? 'Semana' : mode === 'month' ? 'Mês' : 'Ano'}
-                  </button>
-                ))}
+              {showViewMenu && (
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 bg-background border border-border rounded-lg shadow-lg overflow-hidden z-[200] min-w-[110px]">
+                  {(['day', 'week', 'month', 'year'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setViewMode(mode);
+                        setShowViewMenu(false);
+                      }}
+                      className={`w-full px-3 py-1.5 text-xs text-left hover:bg-muted btn-apple ${
+                        viewMode === mode ? 'bg-purple-500/10 text-purple-500' : ''
+                      }`}
+                    >
+                      {mode === 'day' ? 'Dia' : mode === 'week' ? 'Semana' : mode === 'month' ? 'Mês' : 'Ano'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {(viewMode === 'week' || viewMode === 'day') && (
+              <div className="flex items-center justify-center gap-2 mt-2 mb-1">
+                <button
+                  type="button"
+                  onClick={() => setHourHeightPx((h) => Math.max(MIN_HOUR_HEIGHT, h - HOUR_HEIGHT_ZOOM_STEP))}
+                  disabled={hourHeightPx <= MIN_HOUR_HEIGHT}
+                  title="Ver mais horas (cartões menores)"
+                  className="w-9 h-9 rounded-xl bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ZoomOut className="w-4 h-4 text-muted-foreground" />
+                </button>
+                <span className="text-[11px] text-muted-foreground tabular-nums min-w-[4.5rem] text-center">
+                  {hourHeightPx}px/h
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setHourHeightPx((h) => Math.min(MAX_HOUR_HEIGHT, h + HOUR_HEIGHT_ZOOM_STEP))}
+                  disabled={hourHeightPx >= MAX_HOUR_HEIGHT}
+                  title="Aumentar cartões (menos horas visíveis)"
+                  className="w-9 h-9 rounded-xl bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ZoomIn className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+            )}
+
+            {(syncLoading || syncError) && (
+              <div className="mt-2 text-xs text-muted-foreground">
+                {syncLoading && <p>A sincronizar com o servidor…</p>}
+                {syncError && <p className="text-red-500">{syncError}</p>}
+              </div>
+            )}
+
+            {showKikiSuggestion && viewMode !== 'year' && (
+              <div className="mt-3 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-2xl p-3 overflow-hidden">
+                <div className="flex items-start gap-2">
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs mb-2">
+                      {viewMode === 'day' && (
+                        <>Veja os seus compromissos de hoje e mantenha pausas entre reuniões quando possível.</>
+                      )}
+                      {viewMode === 'week' && (
+                        <>
+                          Sugiro mover <span className="font-medium">&quot;Foco profundo&quot;</span> para 9h. Você é mais
+                          produtivo pela manhã!
+                        </>
+                      )}
+                      {viewMode === 'month' && (
+                        <>
+                          Revise o mês e reserve blocos para trabalho focado — a Kiki pode ajudar a reorganizar depois.
+                        </>
+                      )}
+                    </p>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => void applyKikiSuggestion()}
+                        disabled={actionLoading}
+                        className="px-3 py-1.5 bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-full text-xs btn-apple-gradient disabled:opacity-50"
+                      >
+                        Aplicar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowKikiSuggestion(false)}
+                        className="px-3 py-1.5 bg-muted rounded-full text-xs hover:bg-muted/80 btn-apple"
+                      >
+                        Dispensar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showConflictWarning && (
+              <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 overflow-hidden">
+                <div className="flex items-start gap-2">
+                  <div className="w-7 h-7 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+                    <AlertCircle className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs mb-2">
+                      Detectei um <span className="font-medium">conflito de horário</span>. Ajuste um dos eventos ou
+                      arraste para outro horário.
+                    </p>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowConflictWarning(false)}
+                        className="px-3 py-1.5 bg-muted rounded-full text-xs hover:bg-muted/80 btn-apple"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
 
-          {showKikiSuggestion && viewMode !== 'year' && (
-            <div className="mt-3 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-2xl p-3 overflow-hidden">
-              <div className="flex items-start gap-2">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
-                  <Sparkles className="w-3.5 h-3.5 text-white" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-xs mb-2">
-                    {viewMode === 'day' && (
-                      <>
-                        Você tem 3 compromissos hoje. Sugiro reservar 30min de pausa entre reuniões para melhor produtividade.
-                      </>
-                    )}
-                    {viewMode === 'week' && (
-                      <>
-                        Sugiro mover <span className="font-medium">"Foco profundo"</span> para 9h. Você
-                        é mais produtivo pela manhã!
-                      </>
-                    )}
-                    {viewMode === 'month' && (
-                      <>
-                        Este mês tem 12 reuniões agendadas. Sugiro bloquear terças e quintas de manhã para trabalho focado.
-                      </>
-                    )}
-                  </p>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={applyKikiSuggestion}
-                      className="px-3 py-1.5 bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-full text-xs btn-apple-gradient"
-                    >
-                      Aplicar
-                    </button>
-                    <button
-                      onClick={() => setShowKikiSuggestion(false)}
-                      className="px-3 py-1.5 bg-muted rounded-full text-xs hover:bg-muted/80 btn-apple"
-                    >
-                      Dispensar
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {showConflictWarning && (
-            <div className="mt-3 bg-red-500/10 border border-red-500/20 rounded-2xl p-3 overflow-hidden">
-              <div className="flex items-start gap-2">
-                <div className="w-7 h-7 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
-                  <AlertCircle className="w-3.5 h-3.5 text-white" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-xs mb-2">
-                    Detectei um <span className="font-medium">conflito de horário</span>. Quer que eu
-                    reorganize automaticamente?
-                  </p>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => setShowConflictWarning(false)}
-                      className="px-3 py-1.5 bg-red-500 text-white rounded-full text-xs btn-apple-gradient"
-                    >
-                      Ver conflitos
-                    </button>
-                    <button
-                      onClick={() => setShowConflictWarning(false)}
-                      className="px-3 py-1.5 bg-muted rounded-full text-xs hover:bg-muted/80 btn-apple"
-                    >
-                      Fechar
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {viewMode === 'week' && (
-          <div className="flex-1 flex overflow-hidden">
-            <div className="w-10 flex-shrink-0 bg-background border-r border-border z-30">
-              <div className="h-[42px] border-b border-border" />
-              <div
-                ref={hoursScrollRef}
-                className="overflow-y-auto scrollbar-hide"
-                style={{ height: 'calc(100% - 42px)' }}
-                onScroll={handleVerticalScroll}
-              >
-                <div className="relative pt-2">
-                  {HOURS.map((hour) => (
-                    <div
-                      key={hour}
-                      className="relative flex items-start justify-center"
-                      style={{ height: `${HOUR_HEIGHT}px` }}
-                    >
-                      <span className="text-[10px] text-muted-foreground bg-background px-1 -mt-2.5">
-                        {hour.toString().padStart(2, '0')}:00
-                      </span>
-                      <div className="absolute bottom-0 left-0 right-0 border-b border-border" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex flex-shrink-0 border-b border-border bg-background" style={{ height: '42px' }}>
-                {weekDays.map((item) => {
-                  const isToday = item.day === 28;
-                  return (
-                    <div key={item.day} className="flex-1">
-                      <div
-                        className={`text-center py-1.5 rounded-xl m-0.5 ${
-                          isToday ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white' : ''
-                        }`}
-                      >
-                        <p className="text-[10px] opacity-70">{item.name}</p>
-                        <p className="text-xs font-medium">{item.day}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div
-                ref={contentScrollRef}
-                className="flex-1 overflow-y-auto scrollbar-hide"
-                onScroll={handleVerticalScroll}
-              >
-                <div className="flex pt-1.5 h-full">
-                  {weekDays.map((item) => (
-                    <div key={item.day} className="flex-1">
-                      <DayColumn
-                        day={item.day}
-                        dayName={item.name}
-                        events={events}
-                        onDrop={handleDrop}
-                        conflicts={detectConflicts(item.day)}
-                        onSlotClick={handleSlotClick}
-                        onEventClick={handleEventClick}
-                        onEventResize={handleEventResize}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {viewMode === 'day' && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-shrink-0 bg-background z-40 border-b border-border">
-              <div className="flex" style={{ height: '42px' }}>
-                <div className="w-10 flex-shrink-0 border-r border-border" />
-                <div className="flex-1 px-3">
-                  <div className="text-center py-1.5 rounded-xl m-0.5 bg-gradient-to-br from-purple-500 to-pink-500 text-white">
-                    <p className="text-[10px] opacity-70">Segunda-feira</p>
-                    <p className="text-xs font-medium">28 de Abril</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto scrollbar-hide border-t border-border">
-              <div className="flex">
-                <div className="w-10 flex-shrink-0 bg-background border-r border-border">
-                  <div className="relative pt-1.5">
+          {viewMode === 'week' && (
+            <div className="flex-1 flex overflow-hidden">
+              <div className="w-10 flex-shrink-0 bg-background z-30">
+                <div className="h-[42px]" />
+                <div
+                  ref={hoursScrollRef}
+                  className="overflow-y-auto scrollbar-hide"
+                  style={{ height: 'calc(100% - 42px)' }}
+                  onScroll={handleVerticalScroll}
+                >
+                  <div className="relative pt-2">
                     {HOURS.map((hour) => (
                       <div
                         key={hour}
                         className="relative flex items-start justify-center"
-                        style={{ height: `${HOUR_HEIGHT}px` }}
+                        style={{ height: `${hourHeightPx}px` }}
                       >
-                        <span className="text-[9px] text-muted-foreground bg-background px-0.5 -mt-2">
+                        <span className="text-[10px] text-muted-foreground bg-background px-1 -mt-2.5">
                           {hour.toString().padStart(2, '0')}:00
                         </span>
-                        <div className="absolute bottom-0 left-0 right-0 border-b border-border" />
                       </div>
                     ))}
                   </div>
                 </div>
-
-                <div className="flex-1 px-3">
-                  <DayColumn
-                    day={28}
-                    dayName="Seg"
-                    events={events}
-                    onDrop={handleDrop}
-                    conflicts={detectConflicts(28)}
-                    onSlotClick={handleSlotClick}
-                    onEventClick={handleEventClick}
-                    onEventResize={handleEventResize}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {viewMode === 'month' && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
-              <div className="grid grid-cols-7 gap-2 mb-2">
-                {WEEK_DAYS.map((day) => (
-                  <div key={day} className="text-center text-xs text-muted-foreground py-2">
-                    {day}
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-7 gap-2">
-                {Array.from({ length: 30 }, (_, i) => {
-                  const day = i + 1;
-                  const dayEvents = events.filter((e) => e.day === day);
-                  const isToday = day === 28;
-                  return (
-                    <div
-                      key={day}
-                      className={`aspect-square rounded-xl p-2 border transition-all ${
-                        isToday
-                          ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white border-purple-500'
-                          : 'border-border hover:border-purple-500/50'
-                      }`}
-                    >
-                      <div className="text-sm font-medium mb-1">{day}</div>
-                      {dayEvents.length > 0 && (
-                        <div className="space-y-1">
-                          {dayEvents.slice(0, 2).map((event) => (
-                            <div
-                              key={event.id}
-                              className={`text-[8px] px-1 py-0.5 rounded ${event.color || EVENT_COLORS[event.type]} text-white truncate`}
-                            >
-                              {event.title}
-                            </div>
-                          ))}
-                          {dayEvents.length > 2 && (
-                            <div className="text-[8px] text-muted-foreground">+{dayEvents.length - 2}</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {viewMode === 'year' && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
-              <div className="grid grid-cols-3 gap-4">
-                {Array.from({ length: 12 }, (_, monthIndex) => (
-                  <div key={monthIndex} className="border border-border rounded-xl p-3">
-                    <h4 className="mb-2 text-center text-sm">
-                      {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][monthIndex]}
-                    </h4>
-                    <div className="grid grid-cols-7 gap-1">
-                      {Array.from({ length: 30 }, (_, i) => {
-                        const day = i + 1;
-                        const hasEvent = monthIndex === 3 && events.some((e) => e.day === day);
-                        return (
-                          <div
-                            key={day}
-                            className={`aspect-square rounded text-[8px] flex items-center justify-center ${
-                              hasEvent ? 'bg-purple-500 text-white' : 'hover:bg-muted'
-                            }`}
-                          >
-                            {day}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {editingEvent && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-end sm:items-center justify-center p-3">
-            <div className="bg-background rounded-3xl max-w-lg w-full max-h-[85vh] overflow-hidden shadow-2xl">
-              <div className="sticky top-0 bg-background border-b border-border px-5 py-3 flex items-center justify-between">
-                <h2 className="text-lg">{isCreatingNew ? 'Novo Compromisso' : 'Editar Evento'}</h2>
-                <button
-                  onClick={handleCancelEdit}
-                  className="w-9 h-9 rounded-full hover:bg-muted flex items-center justify-center btn-apple"
-                >
-                  <X className="w-4 h-4" />
-                </button>
               </div>
 
-              <div className="p-5 overflow-y-auto max-h-[calc(85vh-130px)]">
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs mb-1.5 text-muted-foreground">Título</label>
-                    <input
-                      type="text"
-                      value={editingEvent.title}
-                      onChange={(e) => setEditingEvent({ ...editingEvent, title: e.target.value })}
-                      placeholder="Digite o título do compromisso"
-                      className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
-                      autoFocus
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs mb-1.5 text-muted-foreground">Hora início</label>
-                      <select
-                        value={editingEvent.startHour}
-                        onChange={(e) => setEditingEvent({ ...editingEvent, startHour: parseInt(e.target.value) })}
-                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="flex flex-shrink-0 bg-background" style={{ height: '42px' }}>
+                  {weekDayCols.map((item) => {
+                    const isToday = item.dayKey === todayKey;
+                    return (
+                      <CalendarHeaderDayDrop
+                        key={item.dayKey}
+                        dayKey={item.dayKey}
+                        onDropKeepTime={handleDropKeepTime}
+                        className="flex-1 min-w-0"
                       >
-                        {HOURS.map((h) => (
-                          <option key={h} value={h}>
-                            {h}:00
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs mb-1.5 text-muted-foreground">Duração</label>
-                      <select
-                        value={editingEvent.duration}
-                        onChange={(e) => setEditingEvent({ ...editingEvent, duration: parseInt(e.target.value) })}
-                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
-                      >
-                        {[1, 2, 3, 4, 5, 6].map((d) => (
-                          <option key={d} value={d}>
-                            {d}h
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs mb-1.5 text-muted-foreground">Tipo</label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {(['meeting', 'task', 'personal'] as const).map((type) => (
-                        <button
-                          key={type}
-                          onClick={() => setEditingEvent({ ...editingEvent, type })}
-                          className={`py-2.5 rounded-xl border-2 btn-apple ${
-                            editingEvent.type === type
-                              ? 'border-purple-500 bg-purple-500/10'
-                              : 'border-border hover:border-purple-500/50'
+                        <div
+                          className={`text-center py-1.5 rounded-xl m-0.5 ${
+                            isToday ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white' : ''
                           }`}
                         >
-                          <span className="text-xs">
-                            {type === 'meeting' ? 'Reunião' : type === 'task' ? 'Tarefa' : 'Pessoal'}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                          <p className="text-[10px] opacity-70 capitalize">{item.weekdayShort}</p>
+                          <p className="text-xs font-medium">{format(item.date, 'd')}</p>
+                        </div>
+                      </CalendarHeaderDayDrop>
+                    );
+                  })}
+                </div>
 
-                  <div>
-                    <label className="block text-xs mb-1.5 text-muted-foreground">Cor</label>
-                    <div className="flex gap-2">
-                      {PASTEL_COLORS.map((color) => (
-                        <button
-                          key={color.value}
-                          onClick={() => setEditingEvent({ ...editingEvent, color: color.value })}
-                          className={`w-10 h-10 rounded-full ${color.value} btn-apple transition-all ${
-                            editingEvent.color === color.value
-                              ? 'ring-2 ring-offset-2 ring-purple-500 scale-110'
-                              : 'hover:scale-105'
-                          }`}
-                          title={color.name}
+                <div
+                  ref={contentScrollRef}
+                  className="flex-1 overflow-y-auto scrollbar-hide"
+                  onScroll={handleVerticalScroll}
+                >
+                  <div className="flex pt-1.5 h-full">
+                    {weekDayCols.map((item) => (
+                      <div key={item.dayKey} className="flex-1 min-w-0">
+                        <DayColumn
+                          dayKey={item.dayKey}
+                          events={events}
+                          hourHeight={hourHeightPx}
+                          onDrop={handleDrop}
+                          conflicts={detectConflictsForDayKey(item.dayKey)}
+                          onSlotClick={handleSlotClick}
+                          onEventClick={handleEventClick}
+                          onEventResize={handleEventResize}
                         />
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
 
-                  <div>
-                    <label className="block text-xs mb-1.5 text-muted-foreground">
-                      <Users className="w-3.5 h-3.5 inline mr-1" />
-                      Convidados
-                    </label>
-                    <input
-                      type="text"
-                      value={editingEvent.guests?.join(', ') || ''}
-                      onChange={(e) =>
-                        setEditingEvent({
-                          ...editingEvent,
-                          guests: e.target.value.split(',').map((g) => g.trim()).filter(Boolean),
-                        })
-                      }
-                      placeholder="Separar por vírgula"
-                      className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs mb-1.5 text-muted-foreground">Descrição</label>
-                    <textarea
-                      value={editingEvent.description || ''}
-                      onChange={(e) => setEditingEvent({ ...editingEvent, description: e.target.value })}
-                      rows={3}
-                      className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple resize-none"
-                      placeholder="Adicione detalhes..."
-                    />
+          {viewMode === 'day' && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-shrink-0 bg-background z-40">
+                <div className="flex" style={{ height: '42px' }}>
+                  <div className="w-10 flex-shrink-0" />
+                  <div className="flex-1 flex px-1 gap-0.5 min-w-0">
+                    {dayViewWeekStrip.map((item) => {
+                      const isSelected = item.dayKey === dayViewKey;
+                      const isToday = item.dayKey === todayKey;
+                      return (
+                        <CalendarHeaderDayDrop
+                          key={item.dayKey}
+                          dayKey={item.dayKey}
+                          onDropKeepTime={handleDropKeepTime}
+                          className="flex-1 min-w-0"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setAnchorDate(startOfDay(item.date))}
+                            className={`w-full text-center py-1 rounded-lg m-0.5 btn-apple transition-colors ${
+                              isSelected
+                                ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md'
+                                : isToday
+                                  ? 'bg-muted ring-1 ring-purple-500/50'
+                                  : 'hover:bg-muted/70 text-foreground'
+                            }`}
+                          >
+                            <p className="text-[9px] opacity-80 capitalize leading-tight truncate">{item.weekdayShort}</p>
+                            <p className="text-[11px] font-semibold leading-tight">{format(item.date, 'd')}</p>
+                          </button>
+                        </CalendarHeaderDayDrop>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
 
-              <div className="sticky bottom-0 bg-background border-t border-border px-5 py-3 flex gap-2">
-                {!isCreatingNew && (
-                  <button
-                    onClick={handleDeleteEvent}
-                    className="px-4 py-2.5 text-sm rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 btn-apple"
-                  >
-                    Excluir
-                  </button>
-                )}
-                <button
-                  onClick={handleCancelEdit}
-                  className={`px-4 py-2.5 text-sm rounded-xl bg-muted hover:bg-muted/80 btn-apple ${isCreatingNew ? '' : 'flex-1'}`}
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleSaveEvent}
-                  disabled={!editingEvent.title.trim()}
-                  className="flex-1 px-4 py-2.5 text-sm rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white btn-apple-gradient disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Salvar
-                </button>
+              <div className="flex-1 overflow-y-auto scrollbar-hide">
+                <div className="flex">
+                  <div className="w-10 flex-shrink-0 bg-background">
+                    <div className="relative pt-1.5">
+                      {HOURS.map((hour) => (
+                        <div
+                          key={hour}
+                          className="relative flex items-start justify-center"
+                          style={{ height: `${hourHeightPx}px` }}
+                        >
+                          <span className="text-[9px] text-muted-foreground bg-background px-0.5 -mt-2">
+                            {hour.toString().padStart(2, '0')}:00
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 px-3">
+                    <DayColumn
+                      dayKey={dayViewKey}
+                      events={events}
+                      hourHeight={hourHeightPx}
+                      onDrop={handleDrop}
+                      conflicts={detectConflictsForDayKey(dayViewKey)}
+                      onSlotClick={handleSlotClick}
+                      onEventClick={handleEventClick}
+                      onEventResize={handleEventResize}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {viewMode === 'month' && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
+                <div className="grid grid-cols-7 gap-2 mb-2">
+                  {WEEK_DAYS.map((day) => (
+                    <div key={day} className="text-center text-xs text-muted-foreground py-2">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-2">
+                  {monthCells.map((cell, idx) => {
+                    if (!cell) {
+                      return <div key={`pad-${idx}`} className="aspect-square" />;
+                    }
+                    const { date } = cell;
+                    const dayEvents = eventsForDay(events, date);
+                    const isToday = isSameDay(date, new Date());
+                    return (
+                      <MonthDayDroppable
+                        key={dayKeyFromDate(date)}
+                        date={date}
+                        isToday={isToday}
+                        onDropKeepTime={handleDropKeepTime}
+                      >
+                        <div className={`text-sm font-medium mb-1 ${isToday ? '' : ''}`}>{format(date, 'd')}</div>
+                        {dayEvents.length > 0 && (
+                          <div className="space-y-1">
+                            {dayEvents.slice(0, 2).map((event) => (
+                              <MonthEventChip key={event.id} event={event} onOpen={() => openDraftFromEvent(event)} />
+                            ))}
+                            {dayEvents.length > 2 && (
+                              <div className={`text-[8px] ${isToday ? 'text-white/80' : 'text-muted-foreground'}`}>
+                                +{dayEvents.length - 2}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </MonthDayDroppable>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {viewMode === 'year' && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
+                <div className="grid grid-cols-3 gap-4">
+                  {Array.from({ length: 12 }, (_, monthIndex) => {
+                    const monthMini = new Date(anchorDate.getFullYear(), monthIndex, 1);
+                    const miniCells = monthGridCells(monthMini);
+                    const monthEvents = eventsTouchingMonth(events, monthMini);
+                    return (
+                      <div key={monthIndex} className="border border-border rounded-xl p-3">
+                        <h4 className="mb-2 text-center text-sm capitalize">{format(monthMini, 'MMM', { locale: ptBR })}</h4>
+                        <div className="grid grid-cols-7 gap-1">
+                          {miniCells.map((c, i) => {
+                            if (!c) return <div key={`e-${monthIndex}-${i}`} className="aspect-square" />;
+                            const hasEvent = monthEvents.some((ev) => isSameDay(parseISO(ev.startsAt), c.date));
+                            return (
+                              <div
+                                key={`${monthIndex}-${c.date.getDate()}`}
+                                className={`aspect-square rounded text-[8px] flex items-center justify-center ${
+                                  hasEvent ? 'bg-purple-500 text-white' : 'hover:bg-muted'
+                                }`}
+                              >
+                                {c.date.getDate()}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {editingEvent && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-end sm:items-center justify-center p-3">
+              <div className="bg-background rounded-3xl max-w-lg w-full max-h-[85vh] overflow-hidden shadow-2xl">
+                <div className="sticky top-0 bg-background border-b border-border px-5 py-3 flex items-center justify-between">
+                  <h2 className="text-lg">{isCreatingNew ? 'Novo Compromisso' : 'Editar Evento'}</h2>
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="w-9 h-9 rounded-full hover:bg-muted flex items-center justify-center btn-apple"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-5 overflow-y-auto max-h-[calc(85vh-130px)]">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs mb-1.5 text-muted-foreground">Título</label>
+                      <input
+                        type="text"
+                        value={editingEvent.title}
+                        onChange={(e) => setEditingEvent({ ...editingEvent, title: e.target.value })}
+                        placeholder="Digite o título do compromisso"
+                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
+                        autoFocus
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs mb-1.5 text-muted-foreground">Dia</label>
+                      <input
+                        type="date"
+                        value={editingEvent.dateKey}
+                        onChange={(e) => setEditingEvent({ ...editingEvent, dateKey: e.target.value })}
+                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs mb-1.5 text-muted-foreground">Hora início</label>
+                        <select
+                          value={editingEvent.startHour}
+                          onChange={(e) =>
+                            setEditingEvent({ ...editingEvent, startHour: parseFloat(e.target.value) })
+                          }
+                          className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
+                        >
+                          {START_HOUR_OPTIONS.map((h) => (
+                            <option key={h} value={h}>
+                              {formatHourOptionLabel(h)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs mb-1.5 text-muted-foreground">Duração</label>
+                        <select
+                          value={editingEvent.duration}
+                          onChange={(e) =>
+                            setEditingEvent({ ...editingEvent, duration: parseFloat(e.target.value) })
+                          }
+                          className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
+                        >
+                          {DURATION_OPTIONS.map((d) => (
+                            <option key={d} value={d}>
+                              {formatDurationLabel(d)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs mb-1.5 text-muted-foreground">Tipo</label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {(['meeting', 'task', 'personal'] as const).map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => setEditingEvent({ ...editingEvent, type })}
+                            className={`py-2.5 rounded-xl border-2 btn-apple ${
+                              editingEvent.type === type
+                                ? 'border-purple-500 bg-purple-500/10'
+                                : 'border-border hover:border-purple-500/50'
+                            }`}
+                          >
+                            <span className="text-xs">
+                              {type === 'meeting' ? 'Reunião' : type === 'task' ? 'Tarefa' : 'Pessoal'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs mb-1.5 text-muted-foreground">Cor</label>
+                      <div className="flex gap-2 flex-wrap">
+                        {PASTEL_COLORS.map((color) => (
+                          <button
+                            key={color.value}
+                            type="button"
+                            onClick={() => setEditingEvent({ ...editingEvent, color: color.value })}
+                            className={`w-10 h-10 rounded-full ${color.value} btn-apple transition-all ${
+                              editingEvent.color === color.value
+                                ? 'ring-2 ring-offset-2 ring-purple-500 scale-110'
+                                : 'hover:scale-105'
+                            }`}
+                            title={color.name}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs mb-1.5 text-muted-foreground">
+                        <Users className="w-3.5 h-3.5 inline mr-1" />
+                        Convidados
+                      </label>
+                      <input
+                        type="text"
+                        value={editingEvent.guests.join(', ')}
+                        onChange={(e) =>
+                          setEditingEvent({
+                            ...editingEvent,
+                            guests: e.target.value
+                              .split(',')
+                              .map((g) => g.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                        placeholder="Separar por vírgula"
+                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs mb-1.5 text-muted-foreground">Descrição</label>
+                      <textarea
+                        value={editingEvent.description}
+                        onChange={(e) => setEditingEvent({ ...editingEvent, description: e.target.value })}
+                        rows={3}
+                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple resize-none"
+                        placeholder="Adicione detalhes..."
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="sticky bottom-0 bg-background border-t border-border px-5 py-3 flex gap-2">
+                  {!isCreatingNew && (
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteEvent()}
+                      disabled={actionLoading}
+                      className="px-4 py-2.5 text-sm rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 btn-apple disabled:opacity-50"
+                    >
+                      Excluir
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    disabled={actionLoading}
+                    className={`px-4 py-2.5 text-sm rounded-xl bg-muted hover:bg-muted/80 btn-apple ${isCreatingNew ? '' : 'flex-1'} disabled:opacity-50`}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveEvent()}
+                    disabled={!editingEvent.title.trim() || actionLoading}
+                    className="flex-1 px-4 py-2.5 text-sm rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white btn-apple-gradient disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Salvar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </DndProvider>
 

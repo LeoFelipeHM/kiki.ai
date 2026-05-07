@@ -27,6 +27,7 @@ interface ProfileScreenProps {
   onEditProfileField?: (field: string) => void;
   onSecurityNavigation?: (type: string) => void;
   onIntegrationNavigation?: (type: string) => void;
+  onLogout?: () => void;
   onReminderStyleClick?: () => void;
   profileData?: {
     name: string;
@@ -38,7 +39,7 @@ interface ProfileScreenProps {
   };
 }
 
-export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNavigation, onIntegrationNavigation, onReminderStyleClick, profileData = {
+export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNavigation, onIntegrationNavigation, onLogout, onReminderStyleClick, profileData = {
   name: 'Maria Silva',
   email: 'maria.silva@email.com',
   phone: '+55 (11) 98765-4321',
@@ -169,8 +170,8 @@ export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNa
             <div className="space-y-2">
               <button
                 onClick={() => {
-                  // Aqui implementaria a lógica de logout
                   setShowLogoutModal(false);
+                  onLogout?.();
                 }}
                 className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-full font-semibold btn-apple transition-all"
               >

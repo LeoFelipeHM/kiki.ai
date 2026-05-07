@@ -1,28 +1,68 @@
-import { Calendar, MessageCircle, X, Settings, Sparkles, Home, FileText } from 'lucide-react';
+import { Calendar, MessageCircle, X, Settings, Sparkles, Home, FileText, Users } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from './ThemeProvider';
+import { ROUTES } from '@/navigation/routes';
+
+type MenuScreen = 'home' | 'chat' | 'calendar' | 'profile' | 'settings' | 'notes' | 'admin-users';
+
+const MENU_PATHS: Record<MenuScreen, string> = {
+  home: ROUTES.home,
+  calendar: ROUTES.calendar,
+  notes: ROUTES.notes,
+  chat: ROUTES.chat,
+  profile: ROUTES.profile,
+  settings: ROUTES.settings,
+  'admin-users': ROUTES.adminUsers,
+};
 
 interface SideMenuProps {
   isOpen: boolean;
   onClose: () => void;
-  onNavigate: (screen: 'home' | 'chat' | 'calendar' | 'profile' | 'settings' | 'notes') => void;
-  currentScreen: string;
   userName?: string;
   userEmail?: string;
+  isAdmin?: boolean;
 }
 
-export function SideMenu({ isOpen, onClose, onNavigate, currentScreen, userName = 'Maria Silva', userEmail = 'maria.silva@email.com' }: SideMenuProps) {
+export function SideMenu({
+  isOpen,
+  onClose,
+  userName = 'Maria Silva',
+  userEmail = 'maria.silva@email.com',
+  isAdmin = false,
+}: SideMenuProps) {
   const { themeColor } = useTheme();
-  const menuItems = [
-    { id: 'home' as const, icon: Home, label: 'Início', description: 'Página inicial' },
-    { id: 'calendar' as const, icon: Calendar, label: 'Calendário', description: 'Visualize sua agenda' },
-    { id: 'notes' as const, icon: FileText, label: 'Notas', description: 'Suas anotações' },
-    { id: 'chat' as const, icon: MessageCircle, label: 'Chat com Kiki', description: 'Converse com sua assistente' },
-    { id: 'settings' as const, icon: Settings, label: 'Configurações', description: 'Ajustes do app' },
+  const navigate = useNavigate();
+  const location = useLocation();
+  const pathname = location.pathname;
+  const menuItems: { id: MenuScreen; icon: typeof Home; label: string; description: string }[] = [
+    { id: 'home', icon: Home, label: 'Início', description: 'Página inicial' },
+    { id: 'calendar', icon: Calendar, label: 'Calendário', description: 'Visualize sua agenda' },
+    { id: 'notes', icon: FileText, label: 'Notas', description: 'Suas anotações' },
+    { id: 'chat', icon: MessageCircle, label: 'Chat com Kiki', description: 'Converse com sua assistente' },
+    ...(isAdmin
+      ? [{ id: 'admin-users' as const, icon: Users, label: 'Usuários', description: 'Administrar contas' }]
+      : []),
+    { id: 'settings', icon: Settings, label: 'Configurações', description: 'Ajustes do app' },
   ];
 
-  const handleNavigate = (screen: 'home' | 'chat' | 'calendar' | 'profile' | 'settings' | 'notes') => {
-    onNavigate(screen);
+  const handleNavigate = (screen: MenuScreen) => {
+    const base = MENU_PATHS[screen];
+    if (screen === 'calendar') {
+      navigate(`${ROUTES.calendar}?view=week`);
+    } else {
+      navigate(base);
+    }
     onClose();
+  };
+
+  const isPathActive = (itemId: MenuScreen) => {
+    if (itemId === 'settings') {
+      return pathname === ROUTES.settings;
+    }
+    if (itemId === 'calendar') {
+      return pathname === ROUTES.calendar;
+    }
+    return pathname === MENU_PATHS[itemId];
   };
 
   return (
@@ -80,7 +120,7 @@ export function SideMenu({ isOpen, onClose, onNavigate, currentScreen, userName 
           <div className="flex-1 overflow-y-auto py-4">
             <nav className="space-y-1 px-2">
               {menuItems.map((item) => {
-                const isActive = currentScreen === item.id || (item.id === 'settings' && currentScreen === 'profile');
+                const isActive = isPathActive(item.id);
                 return (
                   <button
                     key={item.id}

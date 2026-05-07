@@ -1,5 +1,7 @@
 import { Calendar, Clock, Menu, MessageCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { format, isSameDay, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { VoiceChatOrb } from './VoiceChatOrb';
 import { useTheme } from './ThemeProvider';
 import type { CalendarEvent } from '@/types/calendar';
@@ -21,23 +23,15 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
   const [minutesUntilEvent, setMinutesUntilEvent] = useState(0);
   const [isEventSoon, setIsEventSoon] = useState(false);
 
-  // Filtrar eventos de hoje (dia 28) e ordenar por hora
-  const today = 28;
-  const todayEvents = events
-    .filter(event => event.day === today)
-    .sort((a, b) => a.startHour - b.startHour);
-
-  // Encontrar próximo evento
   const now = new Date();
-  const currentHourDecimal = now.getHours() + now.getMinutes() / 60;
+  const todayEvents = events
+    .filter((event) => isSameDay(parseISO(event.startsAt), now))
+    .sort((a, b) => parseISO(a.startsAt).getTime() - parseISO(b.startsAt).getTime());
 
-  const upcomingEvents = todayEvents.filter(event => event.startHour >= currentHourDecimal);
+  const upcomingEvents = todayEvents.filter((event) => parseISO(event.startsAt) >= now);
   const nextEvent = upcomingEvents.length > 0 ? upcomingEvents[0] : todayEvents[0];
 
-  const nextEventTime = new Date();
-  if (nextEvent) {
-    nextEventTime.setHours(Math.floor(nextEvent.startHour), (nextEvent.startHour % 1) * 60, 0, 0);
-  }
+  const nextEventTime = nextEvent ? parseISO(nextEvent.startsAt) : new Date();
 
   useEffect(() => {
     const updateTimeRemaining = () => {
@@ -166,7 +160,9 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
           {/* Greeting */}
           <div className="mb-10">
             <h2 className="text-4xl font-bold mb-2 tracking-tight">{greeting}, {userName.split(' ')[0]}</h2>
-            <p className="text-base text-muted-foreground">Segunda-feira, 28 de Abril</p>
+            <p className="text-base text-muted-foreground capitalize">
+              {format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR })}
+            </p>
           </div>
 
           {/* Hero Card - Primary Focus */}
@@ -244,7 +240,7 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
                         <div className="flex items-center gap-1.5">
                           <Clock className="w-3 h-3 text-muted-foreground" />
                           <p className="text-xs text-muted-foreground">
-                            {Math.floor(event.startHour)}:{String(Math.round((event.startHour % 1) * 60)).padStart(2, '0')}
+                            {format(parseISO(event.startsAt), 'HH:mm')}
                           </p>
                         </div>
                       </div>

@@ -1,11 +1,13 @@
+export type CalendarEventType = 'meeting' | 'task' | 'personal';
+
+/** Modelo alinhado ao backend: intervalo absoluto em ISO 8601. */
 export interface CalendarEvent {
-  id: number
-  title: string
-  day: number
-  startHour: number
-  duration: number
-  type: "meeting" | "task" | "personal"
-  guests?: string[]
-  description?: string
-  color?: string
+  id: string;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  type: CalendarEventType;
+  guests?: string[];
+  description?: string;
+  color?: string;
 }
