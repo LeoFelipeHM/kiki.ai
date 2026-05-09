@@ -10,5 +10,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
 
+RUN python livekit_service.py download-files
+
 EXPOSE 8000
 

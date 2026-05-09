@@ -1,0 +1,3 @@
+# Secrets — nunca commitar
+backend/.env
+.env

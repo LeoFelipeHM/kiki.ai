@@ -1,5 +1,7 @@
 import { Send, Sparkles, Calendar, Clock, CheckCircle2, ListTodo, Mic, MicOff, Menu, X, Phone } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useLiveKitVoiceRoom } from '@/hooks/useLiveKitVoiceRoom';
+import { voiceCenterPrimary, voiceCenterSecondary, voiceOverlayCaption } from '@/lib/voiceUiCaptions';
 import { streamChat, type ChatApiMessage } from '@/services/chat';
 
 interface Message {
@@ -32,11 +34,21 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     },
   ]);
   const [inputValue, setInputValue] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
   const [isVoiceCallActive, setIsVoiceCallActive] = useState(false);
-  const [voiceCallState, setVoiceCallState] = useState<'idle' | 'user-speaking' | 'kiki-speaking'>('idle');
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const voice = useLiveKitVoiceRoom();
+  const voiceDisconnectRef = useRef(voice.disconnect);
+  voiceDisconnectRef.current = voice.disconnect;
+
+  useEffect(() => {
+    return () => {
+      void voiceDisconnectRef.current();
+    };
+  }, []);
+
+  const waveMode: 'idle' | 'user-speaking' | 'kiki-speaking' =
+    voice.phase === 'connected' ? voice.turnVisual : 'idle';
 
   function messagesToApiPayload(history: Message[]): ChatApiMessage[] {
     return history
@@ -80,7 +92,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
 
   const handleSend = async () => {
     const text = inputValue.trim();
-    if (!text || isSending || isRecording) return;
+    if (!text || isSending) return;
 
     const userMessage: Message = {
       id: nextMessageId(messages),
@@ -151,68 +163,22 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     });
   };
 
-  const handleVoiceRecord = () => {
-    if (!isRecording) {
-      setIsRecording(true);
-
-      setTimeout(() => {
-        setIsRecording(false);
-
-        const newMessage: Message = {
-          id: messages.length + 1,
-          text: 'Mensagem de áudio enviada',
-          sender: 'user',
-          timestamp: new Date(),
-          isUserAudio: true,
-        };
-
-        setMessages([...messages, newMessage]);
-
-        setTimeout(() => {
-          const kikiResponse: Message = {
-            id: messages.length + 2,
-            text: 'Claro! Entendi sua mensagem de áudio. Estou aqui para ajudar!',
-            sender: 'kiki',
-            timestamp: new Date(),
-          };
-          setMessages((prev) => [...prev, kikiResponse]);
-        }, 1000);
-      }, 2000);
-    } else {
-      setIsRecording(false);
-    }
-  };
-
-  const handleStartVoiceCall = () => {
+  const beginVoiceCall = async () => {
+    setSendError(null);
     setIsVoiceCallActive(true);
-    setVoiceCallState('idle');
-
-    // Simular conversa por voz
-    setTimeout(() => {
-      setVoiceCallState('kiki-speaking');
-      setTimeout(() => {
-        setVoiceCallState('idle');
-      }, 3000);
-    }, 1000);
+    await voice.connect();
   };
 
-  const handleEndVoiceCall = () => {
+  const handleComposerMic = () => void beginVoiceCall();
+
+  const handleStartVoiceCall = () => void beginVoiceCall();
+
+  const handleEndVoiceCall = async () => {
+    await voice.disconnect();
     setIsVoiceCallActive(false);
-    setVoiceCallState('idle');
   };
 
-  const handleVoiceCallSpeak = () => {
-    if (voiceCallState === 'idle') {
-      setVoiceCallState('user-speaking');
-
-      setTimeout(() => {
-        setVoiceCallState('kiki-speaking');
-        setTimeout(() => {
-          setVoiceCallState('idle');
-        }, 3000);
-      }, 2500);
-    }
-  };
+  const handleVoiceCallToggleMic = () => void voice.toggleMicrophone();
 
   // Voice Call Interface
   if (isVoiceCallActive) {
@@ -246,11 +212,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
               </div>
               <div>
                 <h2 className="text-base mb-0">Ligação com KIKI</h2>
-                <p className="text-xs text-muted-foreground">
-                  {voiceCallState === 'idle' && 'Aguardando...'}
-                  {voiceCallState === 'user-speaking' && 'Você está falando...'}
-                  {voiceCallState === 'kiki-speaking' && 'Kiki está respondendo...'}
-                </p>
+                <p className="text-xs text-muted-foreground">{voiceOverlayCaption(voice)}</p>
               </div>
             </div>
           </div>
@@ -259,7 +221,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
             <div className="relative w-48 h-48 mb-8">
               {/* Ondas de áudio */}
               <div className="absolute inset-0 flex items-center justify-center">
-                {voiceCallState !== 'idle' && (
+                {waveMode !== 'idle' && (
                   <>
                     {Array.from({ length: 40 }).map((_, i) => {
                       const angle = (i / 40) * Math.PI * 2;
@@ -275,7 +237,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
                             left: `calc(50% + ${x}px)`,
                             top: `calc(50% + ${y}px)`,
                             height: `${Math.sin(i * 0.3) * 20 + 30}px`,
-                            backgroundColor: voiceCallState === 'user-speaking'
+                            backgroundColor: waveMode === 'user-speaking'
                               ? 'rgb(168, 85, 247)'
                               : 'rgb(236, 72, 153)',
                             transform: 'translate(-50%, -50%)',
@@ -293,9 +255,9 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
               {/* Avatar central */}
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className={`w-32 h-32 rounded-full flex items-center justify-center text-white shadow-2xl transition-all duration-500 ${
-                  voiceCallState === 'user-speaking'
+                  waveMode === 'user-speaking'
                     ? 'bg-gradient-to-br from-purple-500 to-purple-600 scale-110'
-                    : voiceCallState === 'kiki-speaking'
+                    : waveMode === 'kiki-speaking'
                     ? 'bg-gradient-to-br from-pink-500 to-pink-600 scale-110'
                     : 'bg-gradient-to-br from-purple-500 to-pink-500'
                 }`}>
@@ -305,33 +267,31 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
             </div>
 
             <div className="text-center mb-8">
-              <p className="text-lg font-medium mb-1">
-                {voiceCallState === 'idle' && 'Toque para falar'}
-                {voiceCallState === 'user-speaking' && 'Ouvindo você...'}
-                {voiceCallState === 'kiki-speaking' && 'Kiki está falando'}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {voiceCallState === 'idle' && 'Conversação natural com a Kiki'}
-                {voiceCallState === 'user-speaking' && 'Continue falando normalmente'}
-                {voiceCallState === 'kiki-speaking' && 'Processando sua resposta...'}
-              </p>
+              <p className="text-lg font-medium mb-1">{voiceCenterPrimary(voice)}</p>
+              <p className="text-sm text-muted-foreground">{voiceCenterSecondary(voice)}</p>
             </div>
 
             <div className="flex gap-4">
               <button
-                onClick={handleVoiceCallSpeak}
-                disabled={voiceCallState !== 'idle'}
+                type="button"
+                onClick={handleVoiceCallToggleMic}
+                disabled={voice.phase !== 'connected'}
                 className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${
-                  voiceCallState === 'idle'
+                  voice.phase === 'connected'
                     ? 'bg-gradient-to-br from-purple-500 to-pink-500 hover:scale-110'
                     : 'bg-gray-300 cursor-not-allowed'
                 }`}
               >
-                <Mic className="w-7 h-7 text-white" />
+                {voice.micEnabled ? (
+                  <Mic className="w-7 h-7 text-white" />
+                ) : (
+                  <MicOff className="w-7 h-7 text-white" />
+                )}
               </button>
 
               <button
-                onClick={handleEndVoiceCall}
+                type="button"
+                onClick={() => void handleEndVoiceCall()}
                 className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-all shadow-lg hover:scale-110"
               >
                 <X className="w-7 h-7 text-white" />
@@ -469,13 +429,13 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
                   void handleSend();
                 }
               }}
-              placeholder={isRecording ? 'Gravando...' : isSending ? 'Enviando...' : 'Digite sua mensagem...'}
-              disabled={isRecording || isSending}
+              placeholder={isSending ? 'Enviando...' : 'Digite sua mensagem...'}
+              disabled={isSending}
               className="flex-1 bg-transparent px-3 py-1.5 text-sm outline-none disabled:opacity-50"
             />
             <button
               onClick={() => void handleSend()}
-              disabled={!inputValue.trim() || isRecording || isSending}
+              disabled={!inputValue.trim() || isSending}
               className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white btn-apple-gradient disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="w-4 h-4" />
@@ -483,36 +443,25 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
           </div>
 
           <button
-            onClick={handleVoiceRecord}
+            type="button"
+            onClick={handleComposerMic}
             disabled={isSending}
-            className={`w-12 h-12 rounded-full flex items-center justify-center text-white ${
-              isRecording
-                ? 'bg-red-500 animate-pulse'
-                : 'bg-muted hover:bg-muted/80'
-            } disabled:opacity-40 disabled:cursor-not-allowed`}
+            title="Chamada de voz com a Kiki"
+            className="w-12 h-12 rounded-full flex items-center justify-center text-white bg-muted hover:bg-muted/80 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {isRecording ? <MicOff className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5 text-foreground" />}
+            <Mic className="w-5 h-5 text-foreground" />
           </button>
 
           <button
+            type="button"
             onClick={handleStartVoiceCall}
             disabled={isSending}
+            title="Chamada de voz"
             className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 flex items-center justify-center text-white btn-apple-gradient shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Phone className="w-5 h-5" />
           </button>
         </div>
-
-        {isRecording && (
-          <div className="mt-2 flex items-center justify-center gap-1.5 text-muted-foreground">
-            <div className="flex gap-0.5">
-              <div className="w-0.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
-              <div className="w-0.5 h-3 bg-red-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
-              <div className="w-0.5 h-2.5 bg-red-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
-            </div>
-            <span className="text-xs">Gravando áudio...</span>
-          </div>
-        )}
       </div>
       </div>
     </>

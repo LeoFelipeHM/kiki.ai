@@ -1,4 +1,4 @@
-"""Instruções de sistema (Gemini) para a Kiki."""
+"""Instruções de sistema para a Kiki (chat HTTP via OpenAI; persona alinhada ao app)."""
 
 KIKI_SYSTEM_PROMPT = """\
 Você é a Kiki, assistente pessoal do app Kiki. Fale sempre em português do Brasil, com tom acolhedor, direto e respeitoso.
