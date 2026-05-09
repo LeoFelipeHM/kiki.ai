@@ -38,6 +38,29 @@ def _current_week_range_local(now: datetime | None = None) -> tuple[datetime, da
     return start, end
 
 
+def _format_dt_for_user(dt: datetime, user_timezone: str | None) -> str:
+    try:
+        tz = ZoneInfo(user_timezone) if user_timezone else None
+    except Exception:
+        tz = None
+    local = dt.astimezone(tz) if tz else dt.astimezone()
+    return local.strftime("%d/%m %H:%M")
+
+
+def _find_conflicts(
+    *,
+    calendar_service: Any,
+    user_id: str,
+    starts_at: datetime,
+    ends_at: datetime,
+    exclude_event_id: str | None = None,
+) -> list[dict[str, Any]]:
+    rows = calendar_service.list_events(user_id, starts_at, ends_at)
+    if exclude_event_id:
+        rows = [r for r in rows if str(r.get("id")) != str(exclude_event_id)]
+    return rows
+
+
 def execute_tool_call(
     name: ToolName,
     arguments: dict[str, Any],
@@ -68,6 +91,31 @@ def execute_tool_call(
                 return _tool_error("Título do evento é obrigatório.")
             starts_at = _parse_iso_dt(str(arguments.get("starts_at")), current_user_timezone)
             ends_at = _parse_iso_dt(str(arguments.get("ends_at")), current_user_timezone)
+
+            conflicts = _find_conflicts(
+                calendar_service=calendar_service,
+                user_id=current_user_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+            )
+            if conflicts:
+                preview = []
+                for c in conflicts[:3]:
+                    cs = c.get("starts_at")
+                    ce = c.get("ends_at")
+                    if isinstance(cs, datetime) and isinstance(ce, datetime):
+                        when = f"{_format_dt_for_user(cs, current_user_timezone)}–{_format_dt_for_user(ce, current_user_timezone)}"
+                    else:
+                        when = "horário indefinido"
+                    preview.append(f"- {c.get('title','(sem título)')} ({when})")
+                more = f"\n(+{len(conflicts) - 3} outros)" if len(conflicts) > 3 else ""
+                return _tool_error(
+                    "Conflito de horário: já existe(m) compromisso(s) nesse intervalo.\n"
+                    + "\n".join(preview)
+                    + more
+                    + "\nQuer que eu marque mesmo assim ou prefira outro horário?"
+                )
+
             event_type = str(arguments.get("event_type"))
             color = cast(str | None, arguments.get("color"))
             description = cast(str | None, arguments.get("description"))
@@ -124,6 +172,38 @@ def execute_tool_call(
                         continue
                     em = cast(str | None, g.get("email"))
                     guests.append((nm, (em.strip() if isinstance(em, str) and em.strip() else None)))
+
+            # Se mexeu no intervalo, valide conflitos antes de persistir.
+            if "starts_at" in patch or "ends_at" in patch:
+                current = calendar_service.get_event(current_user_id, event_id)
+                if not current:
+                    return _tool_error("Evento não encontrado.")
+                effective_start = cast(datetime, patch.get("starts_at") or current.get("starts_at"))
+                effective_end = cast(datetime, patch.get("ends_at") or current.get("ends_at"))
+                conflicts = _find_conflicts(
+                    calendar_service=calendar_service,
+                    user_id=current_user_id,
+                    starts_at=effective_start,
+                    ends_at=effective_end,
+                    exclude_event_id=event_id,
+                )
+                if conflicts:
+                    preview = []
+                    for c in conflicts[:3]:
+                        cs = c.get("starts_at")
+                        ce = c.get("ends_at")
+                        if isinstance(cs, datetime) and isinstance(ce, datetime):
+                            when = f"{_format_dt_for_user(cs, current_user_timezone)}–{_format_dt_for_user(ce, current_user_timezone)}"
+                        else:
+                            when = "horário indefinido"
+                        preview.append(f"- {c.get('title','(sem título)')} ({when})")
+                    more = f"\n(+{len(conflicts) - 3} outros)" if len(conflicts) > 3 else ""
+                    return _tool_error(
+                        "Conflito de horário: já existe(m) compromisso(s) nesse intervalo.\n"
+                        + "\n".join(preview)
+                        + more
+                        + "\nQuer que eu altere mesmo assim ou prefira outro horário?"
+                    )
 
             row = calendar_service.update_event(
                 current_user_id,
