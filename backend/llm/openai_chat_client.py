@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from typing import Any
 
 from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
 from llm.prompts.kiki_system import KIKI_SYSTEM_PROMPT
+from llm.tools.agent import ToolAgentError, run_tool_agent, run_tool_agent_stream
 
 DEFAULT_MODEL = "gpt-5.4-mini"
 
@@ -23,6 +25,54 @@ def _client(api_key: str | None) -> OpenAI:
     if not key:
         raise OpenAIChatConfigurationError("OPENAI_API_KEY não configurada.")
     return OpenAI(api_key=key)
+def generate_reply_with_tools(
+    messages: list[tuple[str, str]],
+    *,
+    current_user_id: str,
+    current_user_timezone: str | None,
+    calendar_service: Any,
+    notes_service: Any,
+    api_key: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Próxima mensagem do assistente (Chat Completions) com tool-calling para calendário/notas."""
+    try:
+        return run_tool_agent(
+            messages,
+            current_user_id=current_user_id,
+            current_user_timezone=current_user_timezone,
+            calendar_service=calendar_service,
+            notes_service=notes_service,
+            api_key=api_key,
+            model=model,
+        )
+    except ToolAgentError as exc:
+        raise OpenAIChatCompletionError(str(exc)) from exc
+
+
+def generate_reply_stream_with_tools(
+    messages: list[tuple[str, str]],
+    *,
+    current_user_id: str,
+    current_user_timezone: str | None,
+    calendar_service: Any,
+    notes_service: Any,
+    api_key: str | None = None,
+    model: str | None = None,
+) -> Iterator[str]:
+    """Streaming compatível com SSE, após execução de tools (emite a resposta final em partes)."""
+    try:
+        yield from run_tool_agent_stream(
+            messages,
+            current_user_id=current_user_id,
+            current_user_timezone=current_user_timezone,
+            calendar_service=calendar_service,
+            notes_service=notes_service,
+            api_key=api_key,
+            model=model,
+        )
+    except ToolAgentError as exc:
+        raise OpenAIChatCompletionError(str(exc)) from exc
 
 
 def generate_reply(

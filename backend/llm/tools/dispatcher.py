@@ -1,0 +1,225 @@
+from __future__ import annotations
+
+import logging
+from datetime import datetime, time, timedelta
+from typing import Any, cast
+
+from zoneinfo import ZoneInfo
+
+from llm.tools.schemas import ToolName
+
+log = logging.getLogger("kiki.llm.tools")
+
+
+def _tool_error(message: str) -> dict[str, Any]:
+    return {"ok": False, "error": message}
+
+
+def _tool_ok(payload: Any) -> dict[str, Any]:
+    return {"ok": True, "data": payload}
+
+
+def _parse_iso_dt(value: str, user_timezone: str | None) -> datetime:
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("Data/hora inválida (use ISO 8601).") from exc
+    if dt.tzinfo is None:
+        tz = ZoneInfo(user_timezone) if user_timezone else datetime.now().astimezone().tzinfo
+        dt = dt.replace(tzinfo=tz)
+    return dt
+
+
+def _current_week_range_local(now: datetime | None = None) -> tuple[datetime, datetime]:
+    cur = (now or datetime.now().astimezone()).astimezone()
+    monday = (cur - timedelta(days=cur.weekday())).date()
+    start = datetime.combine(monday, time.min, tzinfo=cur.tzinfo)
+    end = start + timedelta(days=7)
+    return start, end
+
+
+def execute_tool_call(
+    name: ToolName,
+    arguments: dict[str, Any],
+    *,
+    current_user_id: str,
+    current_user_timezone: str | None,
+    calendar_service: Any,
+    notes_service: Any,
+) -> dict[str, Any]:
+    """Executa uma tool e retorna um payload JSON serializável para devolver ao modelo."""
+    try:
+        log.info("tool_call name=%s user_id=%s args_keys=%s", name, current_user_id, sorted(arguments.keys()))
+
+        if name == "calendar_list_events":
+            from_iso = cast(str | None, arguments.get("from_iso"))
+            to_iso = cast(str | None, arguments.get("to_iso"))
+            if not from_iso and not to_iso:
+                rf, rt = _current_week_range_local()
+            else:
+                rf = _parse_iso_dt(from_iso, current_user_timezone) if from_iso else None
+                rt = _parse_iso_dt(to_iso, current_user_timezone) if to_iso else None
+            rows = calendar_service.list_events(current_user_id, rf, rt)
+            return _tool_ok(rows)
+
+        if name == "calendar_create_event":
+            title = str(arguments.get("title") or "").strip()
+            if not title:
+                return _tool_error("Título do evento é obrigatório.")
+            starts_at = _parse_iso_dt(str(arguments.get("starts_at")), current_user_timezone)
+            ends_at = _parse_iso_dt(str(arguments.get("ends_at")), current_user_timezone)
+            event_type = str(arguments.get("event_type"))
+            color = cast(str | None, arguments.get("color"))
+            description = cast(str | None, arguments.get("description"))
+            status = str(arguments.get("status") or "confirmed")
+            guests_in = cast(list[dict[str, Any]] | None, arguments.get("guests")) or []
+            guests: list[tuple[str, str | None]] = []
+            for g in guests_in:
+                nm = str(g.get("name") or "").strip()
+                if not nm:
+                    continue
+                em = cast(str | None, g.get("email"))
+                guests.append((nm, (em.strip() if isinstance(em, str) and em.strip() else None)))
+            row = calendar_service.create_event(
+                current_user_id,
+                title=title,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                event_type=event_type,
+                color=(color.strip() if isinstance(color, str) and color.strip() else None),
+                description=(description.strip() if isinstance(description, str) and description.strip() else None),
+                status=status,
+                guests=guests,
+            )
+            return _tool_ok(row)
+
+        if name == "calendar_update_event":
+            event_id = str(arguments.get("event_id") or "").strip()
+            if not event_id:
+                return _tool_error("event_id é obrigatório.")
+            patch: dict[str, Any] = {}
+            if "title" in arguments and arguments.get("title") is not None:
+                patch["title"] = str(arguments.get("title")).strip()
+            if "starts_at" in arguments and arguments.get("starts_at") is not None:
+                patch["starts_at"] = _parse_iso_dt(str(arguments.get("starts_at")), current_user_timezone)
+            if "ends_at" in arguments and arguments.get("ends_at") is not None:
+                patch["ends_at"] = _parse_iso_dt(str(arguments.get("ends_at")), current_user_timezone)
+            if "event_type" in arguments and arguments.get("event_type") is not None:
+                patch["event_type"] = str(arguments.get("event_type"))
+            if "color" in arguments and arguments.get("color") is not None:
+                patch["color"] = cast(str, arguments.get("color"))
+            if "description" in arguments and arguments.get("description") is not None:
+                patch["description"] = cast(str, arguments.get("description"))
+            if "status" in arguments and arguments.get("status") is not None:
+                patch["status"] = cast(str, arguments.get("status"))
+
+            guests_replace = "guests" in arguments
+            guests_in = cast(list[dict[str, Any]] | None, arguments.get("guests")) if guests_replace else None
+            guests: list[tuple[str, str | None]] | None = None
+            if guests_replace:
+                guests = []
+                for g in guests_in or []:
+                    nm = str(g.get("name") or "").strip()
+                    if not nm:
+                        continue
+                    em = cast(str | None, g.get("email"))
+                    guests.append((nm, (em.strip() if isinstance(em, str) and em.strip() else None)))
+
+            row = calendar_service.update_event(
+                current_user_id,
+                event_id,
+                title=patch.get("title"),
+                starts_at=patch.get("starts_at"),
+                ends_at=patch.get("ends_at"),
+                event_type=patch.get("event_type"),
+                color=patch.get("color"),
+                description=patch.get("description"),
+                status=patch.get("status"),
+                guests_replace=guests_replace,
+                guests=guests,
+            )
+            if not row:
+                return _tool_error("Evento não encontrado.")
+            return _tool_ok(row)
+
+        if name == "calendar_delete_event":
+            event_id = str(arguments.get("event_id") or "").strip()
+            if not event_id:
+                return _tool_error("event_id é obrigatório.")
+            ok = calendar_service.delete_event(current_user_id, event_id)
+            if not ok:
+                return _tool_error("Evento não encontrado.")
+            return _tool_ok({"deleted": True})
+
+        if name == "notes_list_notes":
+            q = cast(str | None, arguments.get("q"))
+            rows = notes_service.list_notes(current_user_id, q)
+            return _tool_ok(rows)
+
+        if name == "notes_create_note":
+            title = str(arguments.get("title") or "")
+            content = str(arguments.get("content") or "")
+            is_pinned = bool(arguments.get("is_pinned") or False)
+            is_locked = bool(arguments.get("is_locked") or False)
+            tags = cast(list[str] | None, arguments.get("tags")) or []
+            row = notes_service.create_note(
+                current_user_id,
+                title=title,
+                content=content,
+                is_pinned=is_pinned,
+                is_locked=is_locked,
+                tags=tags,
+            )
+            return _tool_ok(row)
+
+        if name == "notes_update_note":
+            note_id = str(arguments.get("note_id") or "").strip()
+            if not note_id:
+                return _tool_error("note_id é obrigatório.")
+            data: dict[str, Any] = {}
+            if "title" in arguments and arguments.get("title") is not None:
+                data["title"] = cast(str, arguments.get("title"))
+            if "content" in arguments and arguments.get("content") is not None:
+                data["content"] = cast(str, arguments.get("content"))
+            if "is_pinned" in arguments and arguments.get("is_pinned") is not None:
+                data["is_pinned"] = bool(arguments.get("is_pinned"))
+            if "is_locked" in arguments and arguments.get("is_locked") is not None:
+                data["is_locked"] = bool(arguments.get("is_locked"))
+
+            tags_replace = "tags" in arguments
+            tags_val = cast(list[str] | None, arguments.get("tags")) if tags_replace else None
+
+            row = notes_service.update_note(
+                current_user_id,
+                note_id,
+                title=data.get("title"),
+                content=data.get("content"),
+                is_pinned=data.get("is_pinned"),
+                is_locked=data.get("is_locked"),
+                tags_replace=tags_replace,
+                tags=tags_val,
+            )
+            if not row:
+                return _tool_error("Nota não encontrada.")
+            return _tool_ok(row)
+
+        if name == "notes_delete_note":
+            note_id = str(arguments.get("note_id") or "").strip()
+            if not note_id:
+                return _tool_error("note_id é obrigatório.")
+            ok = notes_service.delete_note(current_user_id, note_id)
+            if not ok:
+                return _tool_error("Nota não encontrada.")
+            return _tool_ok({"deleted": True})
+
+        return _tool_error("Ferramenta desconhecida.")
+    except Exception as exc:
+        log.exception("tool_failed name=%s user_id=%s", name, current_user_id)
+        msg = str(exc) or exc.__class__.__name__
+        low = msg.lower()
+        if "connection is closed" in low or ("closed" in low and "connection" in low):
+            return _tool_error("Não consegui salvar agora porque a conexão com o banco está fechada (serviço offline).")
+        if "could not connect" in low or "connection refused" in low:
+            return _tool_error("Não consegui salvar agora porque não consegui conectar ao banco (serviço offline).")
+        return _tool_error(msg)
+
