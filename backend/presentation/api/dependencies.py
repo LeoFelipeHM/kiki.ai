@@ -19,6 +19,7 @@ from infrastructure.persistence.postgres_notes_repository import PostgresNotesRe
 from infrastructure.persistence.postgres_push_repository import PostgresPushRepository
 from infrastructure.persistence.postgres_settings_repository import PostgresSettingsRepository
 from infrastructure.persistence.postgres_refresh_token_repository import PostgresRefreshTokenRepository
+from infrastructure.persistence.postgres_usage_repository import PostgresUsageRepository
 from infrastructure.persistence.postgres_user_repository import PostgresUserRepository
 from infrastructure.security.jwt_tokens import JwtTokens
 from infrastructure.security.password_hasher import PasswordHasher
@@ -60,6 +61,7 @@ def get_auth_service(conn: DbConnDep) -> AuthService:
         PostgresRefreshTokenRepository(conn),
         password_hasher,
         jwt_tokens,
+        PostgresUsageRepository(conn),
     )
 
 

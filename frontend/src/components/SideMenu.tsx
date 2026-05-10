@@ -1,9 +1,27 @@
-import { Calendar, MessageCircle, X, Settings, Sparkles, Home, FileText, Users } from 'lucide-react';
+import {
+  Activity,
+  Calendar,
+  MessageCircle,
+  X,
+  Settings,
+  Sparkles,
+  Home,
+  FileText,
+  Users,
+} from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from './ThemeProvider';
 import { ROUTES } from '@/navigation/routes';
 
-type MenuScreen = 'home' | 'chat' | 'calendar' | 'profile' | 'settings' | 'notes' | 'admin-users';
+type MenuScreen =
+  | 'home'
+  | 'chat'
+  | 'calendar'
+  | 'profile'
+  | 'settings'
+  | 'notes'
+  | 'admin-users'
+  | 'admin-usage';
 
 const MENU_PATHS: Record<MenuScreen, string> = {
   home: ROUTES.home,
@@ -13,6 +31,7 @@ const MENU_PATHS: Record<MenuScreen, string> = {
   profile: ROUTES.profile,
   settings: ROUTES.settings,
   'admin-users': ROUTES.adminUsers,
+  'admin-usage': ROUTES.adminUsage,
 };
 
 interface SideMenuProps {
@@ -40,7 +59,10 @@ export function SideMenu({
     { id: 'calendar', icon: Calendar, label: 'Calendário', description: 'Visualize sua agenda' },
     { id: 'notes', icon: FileText, label: 'Notas', description: 'Suas anotações' },
     ...(isAdmin
-      ? [{ id: 'admin-users' as const, icon: Users, label: 'Usuários', description: 'Administrar contas' }]
+      ? [
+          { id: 'admin-users' as const, icon: Users, label: 'Usuários', description: 'Administrar contas' },
+          { id: 'admin-usage' as const, icon: Activity, label: 'Uso', description: 'Métricas da plataforma' },
+        ]
       : []),
     { id: 'settings', icon: Settings, label: 'Configurações', description: 'Ajustes do app' },
   ];

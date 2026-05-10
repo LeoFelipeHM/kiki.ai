@@ -19,6 +19,7 @@ export const ROUTES = {
   profileSubscription: '/profile/assinatura',
   integration: (slug: string) => `/integracao/${slug}`,
   adminUsers: '/admin/usuarios',
+  adminUsage: '/admin/uso',
 } as const;
 
 /** Rotas com parâmetros (pattern React Router) */

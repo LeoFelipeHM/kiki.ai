@@ -9,7 +9,8 @@ from fastapi import APIRouter, HTTPException, status
 from livekit import api
 from livekit.protocol.agent_dispatch import CreateAgentDispatchRequest
 
-from presentation.api.dependencies import CurrentUserDep
+from presentation.api.dependencies import CurrentUserDep, DbConnDep
+from infrastructure.persistence.postgres_usage_repository import PostgresUsageRepository
 from presentation.api.schemas.voice import VoiceSessionResponse
 
 router = APIRouter(prefix="/voice", tags=["voice"])
@@ -18,7 +19,7 @@ _AGENT_NAME = os.getenv("KIKI_VOICE_AGENT_NAME", "kiki-voice").strip() or "kiki-
 
 
 @router.post("/session", response_model=VoiceSessionResponse)
-async def create_voice_session(current_user: CurrentUserDep) -> VoiceSessionResponse:
+async def create_voice_session(current_user: CurrentUserDep, conn: DbConnDep) -> VoiceSessionResponse:
     """Emite JWT de participante e despacha o agente de voz para a sala."""
     lk_url = (os.getenv("LIVEKIT_URL") or "").strip()
     api_key = (os.getenv("LIVEKIT_API_KEY") or "").strip()
@@ -65,5 +66,9 @@ async def create_voice_session(current_user: CurrentUserDep) -> VoiceSessionResp
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Falha ao despachar agente de voz: {exc}",
         ) from exc
+
+    usage = PostgresUsageRepository(conn)
+    usage.insert_event(str(current_user["id"]), "voice_session", {"room_name": room_name})
+    conn.commit()
 
     return VoiceSessionResponse(url=lk_url, token=token, room_name=room_name)

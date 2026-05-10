@@ -20,6 +20,7 @@ import { DeleteAccountPage } from './pages/DeleteAccountPage';
 import { ManageSubscriptionPage } from './pages/ManageSubscriptionPage';
 import { IntegrationPage } from './pages/IntegrationPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
+import { AdminUsagePage } from './pages/AdminUsagePage';
 import { SettingsPage } from './pages/SettingsPage';
 
 export { ROUTES, ROUTE_PATTERNS } from './root.paths';
@@ -43,6 +44,7 @@ export const PAGE_REGISTRY = [
   { path: ROUTES.profileSubscription, title: 'Assinatura' },
   { path: ROUTE_PATTERNS.integration, title: 'Integração' },
   { path: ROUTES.adminUsers, title: 'Administração de usuários' },
+  { path: ROUTES.adminUsage, title: 'Uso da plataforma' },
 ] as const;
 
 export function ProtectedLayout({
@@ -143,6 +145,7 @@ export function RootRoutes({
         <Route path={ROUTES.profileSubscription} element={<ManageSubscriptionPage />} />
         <Route path={ROUTE_PATTERNS.integration} element={<IntegrationPage />} />
         <Route path={ROUTES.adminUsers} element={<AdminUsersPage />} />
+        <Route path={ROUTES.adminUsage} element={<AdminUsagePage />} />
       </Route>
       <Route
         path="*"

@@ -13,6 +13,7 @@ from application.calendar_service import CalendarService
 from application.notes_service import NotesService
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
+from infrastructure.persistence.postgres_usage_repository import PostgresUsageRepository
 from llm.openai_chat_client import (
     OpenAIChatCompletionError,
     OpenAIChatConfigurationError,
@@ -21,6 +22,7 @@ from llm.openai_chat_client import (
 )
 from presentation.api.dependencies import (
     CurrentUserDep,
+    DbConnDep,
     get_calendar_service,
     get_notes_service,
     settings,
@@ -78,6 +80,13 @@ def chat_completion_stream(
                 )
                 for delta in stream:
                     result_queue.put(("delta", delta))
+                usage_repo = PostgresUsageRepository(conn)
+                usage_repo.insert_event(
+                    str(current_user["id"]),
+                    "chat_completion",
+                    {"stream": True},
+                )
+                conn.commit()
                 result_queue.put(("finished", None))
             except OpenAIChatConfigurationError as exc:
                 result_queue.put(("config_err", exc))
@@ -142,6 +151,7 @@ def chat_completion_stream(
 def chat_completion(
     payload: ChatRequest,
     current_user: CurrentUserDep,
+    conn: DbConnDep,
     calendar_service: CalendarServiceDep,
     notes_service: NotesServiceDep,
 ):
@@ -164,4 +174,7 @@ def chat_completion(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except OpenAIChatCompletionError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    usage_repo = PostgresUsageRepository(conn)
+    usage_repo.insert_event(str(current_user["id"]), "chat_completion", {"stream": False})
+    conn.commit()
     return ChatResponse(reply=reply)

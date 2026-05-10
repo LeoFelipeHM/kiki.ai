@@ -1041,7 +1041,15 @@ export function CalendarScreen({
                     const miniCells = monthGridCells(monthMini);
                     const monthEvents = eventsTouchingMonth(events, monthMini);
                     return (
-                      <div key={monthIndex} className="border border-border rounded-xl p-3">
+                      <button
+                        key={monthIndex}
+                        type="button"
+                        onClick={() => {
+                          setAnchorDate(startOfDay(new Date(anchorDate.getFullYear(), monthIndex, 1)));
+                          setViewMode('month');
+                        }}
+                        className="border border-border rounded-xl p-3 w-full text-left hover:bg-muted/50 transition-colors btn-apple focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60"
+                      >
                         <h4 className="mb-2 text-center text-sm capitalize">{format(monthMini, 'MMM', { locale: ptBR })}</h4>
                         <div className="grid grid-cols-7 gap-1">
                           {miniCells.map((c, i) => {
@@ -1059,7 +1067,7 @@ export function CalendarScreen({
                             );
                           })}
                         </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>

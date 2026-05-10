@@ -14,9 +14,19 @@ from application.errors import (
 )
 from infrastructure.config import Settings
 from infrastructure.persistence.postgres_refresh_token_repository import PostgresRefreshTokenRepository
+from infrastructure.persistence.postgres_usage_repository import PostgresUsageRepository
 from infrastructure.persistence.postgres_user_repository import PostgresUserRepository
 from infrastructure.security.jwt_tokens import JwtTokens
 from infrastructure.security.password_hasher import PasswordHasher
+
+
+def _truncate_user_agent(user_agent: str | None, max_len: int = 512) -> str | None:
+    if not user_agent:
+        return None
+    u = user_agent.strip()
+    if len(u) <= max_len:
+        return u
+    return u[: max_len - 3] + "..."
 
 
 class AuthService:
@@ -28,6 +38,7 @@ class AuthService:
         refresh_tokens: PostgresRefreshTokenRepository,
         passwords: PasswordHasher,
         jwt: JwtTokens,
+        usage: PostgresUsageRepository,
     ) -> None:
         self._conn = conn
         self._settings = settings
@@ -35,6 +46,7 @@ class AuthService:
         self._refresh_tokens = refresh_tokens
         self._passwords = passwords
         self._jwt = jwt
+        self._usage = usage
 
     def register(self, name: str, email: str, password: str) -> dict[str, Any]:
         if self._users.email_exists(email):
@@ -99,7 +111,14 @@ class AuthService:
             raise InvalidCredentialsError()
 
         authenticated_user = self._users.clear_lockout_and_mark_login(user["id"])
-        return self._issue_token_pair(authenticated_user, user_agent, ip_address)
+        tokens = self._issue_token_pair(authenticated_user, user_agent, ip_address)
+        self._usage.insert_event(
+            str(authenticated_user["id"]),
+            "login",
+            {"ip": ip_address, "user_agent": _truncate_user_agent(user_agent)},
+        )
+        self._conn.commit()
+        return tokens
 
     def refresh_session(
         self,
@@ -142,6 +161,11 @@ class AuthService:
             refresh_expires_at,
             user_agent,
             ip_address,
+        )
+        self._usage.insert_event(
+            str(user["id"]),
+            "token_refresh",
+            {"ip": ip_address, "user_agent": _truncate_user_agent(user_agent)},
         )
         self._conn.commit()
 
