@@ -5,5 +5,9 @@ import { ROUTES } from '@/navigation/routes';
 export function ManageSubscriptionPage() {
   const navigate = useNavigate();
 
-  return <ManageSubscriptionScreen onNavigateBack={() => navigate(ROUTES.profile)} />;
+  return (
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col">
+      <ManageSubscriptionScreen onNavigateBack={() => navigate(ROUTES.profile)} />
+    </div>
+  );
 }

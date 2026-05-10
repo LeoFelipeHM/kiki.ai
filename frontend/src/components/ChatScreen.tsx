@@ -140,7 +140,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
           ),
         );
       },
-      onDone: () => {
+      onDone: (interrupted) => {
         setMessages((prev) =>
           prev.map((m) => {
             if (m.id !== kikiId) return m;
@@ -148,6 +148,9 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
             return { ...m, text: finalText, streamingPhase: undefined };
           }),
         );
+        if (interrupted) {
+          setSendError('Conexão instável: a resposta pode estar incompleta. Envie de novo se precisar.');
+        }
         setIsSending(false);
       },
       onError: (msg) => {

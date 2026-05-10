@@ -1,9 +1,12 @@
-import { Calendar, Clock, Menu, MessageCircle } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Calendar, CheckCircle2, Circle, Clock, Menu, MessageCircle } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { format, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { VoiceChatOrb } from './VoiceChatOrb';
 import { useTheme } from './ThemeProvider';
+import { useAppShell } from '@/context/AppShellContext';
+import { AuthSessionExpiredError } from '@/services/auth';
+import { patchCalendarEvent } from '@/services/calendar';
 import type { CalendarEvent } from '@/types/calendar';
 
 interface HomeScreenProps {
@@ -15,8 +18,13 @@ interface HomeScreenProps {
   userName?: string;
 }
 
+function isTaskDone(event: CalendarEvent): boolean {
+  return (event.status ?? 'confirmed') === 'completed';
+}
+
 export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateToProfile, onOpenMenu, events, userName = 'Maria' }: HomeScreenProps) {
   const { themeColor } = useTheme();
+  const { setEvents, onSessionExpired } = useAppShell();
   const currentHour = new Date().getHours();
   const greeting = currentHour < 12 ? 'Bom dia' : currentHour < 18 ? 'Boa tarde' : 'Boa noite';
   const [timeRemaining, setTimeRemaining] = useState('');
@@ -28,8 +36,36 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
     .filter((event) => isSameDay(parseISO(event.startsAt), now))
     .sort((a, b) => parseISO(a.startsAt).getTime() - parseISO(b.startsAt).getTime());
 
-  const upcomingEvents = todayEvents.filter((event) => parseISO(event.startsAt) >= now);
-  const nextEvent = upcomingEvents.length > 0 ? upcomingEvents[0] : todayEvents[0];
+  /** Compromissos que não são tarefas (tarefas ficam no card principal). */
+  const todayCommitments = todayEvents.filter((e) => e.type !== 'task');
+  const upcomingCommitments = todayCommitments.filter((event) => parseISO(event.startsAt) >= now);
+  const nextEvent =
+    upcomingCommitments.length > 0 ? upcomingCommitments[0] : todayCommitments[0];
+
+  const todayTaskEvents = useMemo(
+    () =>
+      events
+        .filter((e) => e.type === 'task' && isSameDay(parseISO(e.startsAt), new Date()))
+        .sort((a, b) => parseISO(a.startsAt).getTime() - parseISO(b.startsAt).getTime()),
+    [events],
+  );
+
+  const completedTasks = todayTaskEvents.filter(isTaskDone).length;
+  const totalTasks = todayTaskEvents.length;
+  const progressPercentage = totalTasks === 0 ? 0 : (completedTasks / totalTasks) * 100;
+
+  const toggleTaskComplete = useCallback(
+    async (event: CalendarEvent) => {
+      const nextStatus = isTaskDone(event) ? 'confirmed' : 'completed';
+      try {
+        const updated = await patchCalendarEvent(event.id, { status: nextStatus });
+        setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+      } catch (e) {
+        if (e instanceof AuthSessionExpiredError) onSessionExpired();
+      }
+    },
+    [setEvents, onSessionExpired],
+  );
 
   const nextEventTime = nextEvent ? parseISO(nextEvent.startsAt) : new Date();
 
@@ -69,72 +105,53 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
     return () => clearInterval(interval);
   }, [nextEvent, events]);
 
-  const todayTasks = [
-    { id: 1, title: 'Finalizar relatório trimestral', completed: true },
-    { id: 2, title: 'Revisar proposta comercial', completed: false },
-    { id: 3, title: 'Preparar apresentação Q2', completed: false },
-  ];
-
-  const completedTasks = todayTasks.filter(t => t.completed).length;
-  const totalTasks = todayTasks.length;
-  const progressPercentage = (completedTasks / totalTasks) * 100;
-
-  const getProductivityMessage = () => {
-    if (progressPercentage >= 80) return 'Ótimo progresso hoje!';
-    if (progressPercentage >= 50) return 'Você está indo bem';
-    if (progressPercentage > 0) return 'Continue assim';
-    return 'Vamos começar?';
-  };
-
   const getDailySummary = () => {
-    const pendingTasks = todayTasks.filter(t => !t.completed).length;
-    const eventsRemaining = upcomingEvents.length;
+    const pendingTasks = todayTaskEvents.filter((t) => !isTaskDone(t)).length;
+    const eventsRemaining = upcomingCommitments.length;
 
     let title = 'Seu dia está em andamento';
     let completedText = '';
     let pendingText = '';
     let insight = '';
 
-    // Title based on time and progress
     if (currentHour < 12) {
       title = 'Bom começo de dia';
     } else if (currentHour >= 18) {
       title = 'Finalizando o dia';
-    } else if (progressPercentage >= 80) {
+    } else if (totalTasks > 0 && progressPercentage >= 80) {
       title = 'Você está quase lá';
     }
 
-    // Completed items
     if (completedTasks > 0) {
       completedText = `${completedTasks} ${completedTasks === 1 ? 'tarefa concluída' : 'tarefas concluídas'}`;
     }
 
-    // Pending items
     const pendingItems = [];
     if (pendingTasks > 0) {
       pendingItems.push(`${pendingTasks} ${pendingTasks === 1 ? 'tarefa' : 'tarefas'}`);
     }
     if (eventsRemaining > 0) {
-      pendingItems.push(`${eventsRemaining} ${eventsRemaining === 1 ? 'reunião' : 'reuniões'}`);
+      pendingItems.push(`${eventsRemaining} ${eventsRemaining === 1 ? 'compromisso' : 'compromissos'}`);
     }
 
     if (pendingItems.length > 0) {
       pendingText = pendingItems.join(' e ');
     }
 
-    // Insight
-    if (progressPercentage >= 80 && eventsRemaining === 0) {
+    if (totalTasks > 0 && progressPercentage >= 80 && eventsRemaining === 0) {
       insight = 'Você está no controle';
-    } else if (progressPercentage >= 50) {
+    } else if (totalTasks > 0 && progressPercentage >= 50) {
       insight = 'Mantendo o ritmo';
     } else if (pendingTasks === 0 && eventsRemaining > 0) {
-      insight = 'Foco nas reuniões';
+      insight = 'Foco nos compromissos';
     }
 
     return { title, completedText, pendingText, insight };
   };
 
   const summary = getDailySummary();
+  const taskListVisible = todayTaskEvents.slice(0, 5);
+  const taskOverflow = todayTaskEvents.length - taskListVisible.length;
 
   return (
     <>
@@ -165,10 +182,11 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
             </p>
           </div>
 
-          {/* Hero Card - Primary Focus */}
-          <div className="relative rounded-3xl overflow-hidden mb-12 shadow-xl">
-            <div className={`absolute inset-0 bg-gradient-to-br ${themeColor}`} />
-            <div className="relative px-6 py-8">
+          {/* Hero Card — mesmo efeito de brilho do avatar (btn-apple-gradient no theme.css) */}
+          <div
+            className={`relative mb-12 overflow-hidden rounded-3xl bg-gradient-to-br ${themeColor} btn-apple-gradient shadow-xl`}
+          >
+            <div className="relative z-10 px-6 py-8">
               {/* Daily Summary */}
               <div className="mb-8">
                 <h3 className="text-white font-semibold text-lg mb-3">
@@ -187,6 +205,58 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
                 </div>
               </div>
 
+              <div className="mb-8">
+                <p className="text-white/90 text-xs font-semibold uppercase tracking-wide mb-3">
+                  Tarefas de hoje
+                </p>
+                {taskListVisible.length === 0 ? (
+                  <p className="text-white/75 text-sm">Nenhuma tarefa agendada para hoje.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {taskListVisible.map((task) => {
+                      const done = isTaskDone(task);
+                      return (
+                        <li key={task.id}>
+                          <div className="flex items-center gap-2 rounded-2xl bg-white/10 hover:bg-white/15 transition-colors pl-2 pr-3 py-2.5">
+                            <button
+                              type="button"
+                              aria-label={done ? 'Marcar tarefa como pendente' : 'Marcar tarefa como concluída'}
+                              className="flex-shrink-0 p-1 rounded-lg hover:bg-white/10 transition-colors"
+                              onClick={() => void toggleTaskComplete(task)}
+                            >
+                              {done ? (
+                                <CheckCircle2 className="w-6 h-6 text-white" strokeWidth={2} />
+                              ) : (
+                                <Circle className="w-6 h-6 text-white/90" strokeWidth={2} />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              className={`flex-1 min-w-0 text-left text-sm leading-snug ${done ? 'text-white/75 line-through' : 'text-white'}`}
+                              onClick={() => onNavigateToCalendar?.('day')}
+                            >
+                              <span className="block truncate">{task.title}</span>
+                            </button>
+                            <span className="flex-shrink-0 text-xs text-white/70 tabular-nums">
+                              {format(parseISO(task.startsAt), 'HH:mm')}
+                            </span>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {taskOverflow > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigateToCalendar?.('day')}
+                    className="mt-3 text-sm text-white/85 underline underline-offset-2 hover:text-white"
+                  >
+                    + {taskOverflow} {taskOverflow === 1 ? 'tarefa' : 'tarefas'} no calendário
+                  </button>
+                )}
+              </div>
+
               <button
                 onClick={onNavigateToChat}
                 className="w-full bg-white hover:bg-white/95 text-purple-600 font-semibold py-4 px-6 rounded-full transition-all btn-apple shadow-lg"
@@ -200,7 +270,7 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
           </div>
 
           {/* Upcoming Events */}
-          {(isEventSoon || todayEvents.length > 0) && (
+          {(isEventSoon || todayCommitments.length > 0) && (
             <div>
               <h3 className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wide">
                 Próximos compromissos
@@ -225,7 +295,7 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
                   </button>
                 )}
 
-                {todayEvents.slice(isEventSoon ? 1 : 0, 2).map((event) => (
+                {todayCommitments.slice(isEventSoon ? 1 : 0, 2).map((event) => (
                   <button
                     key={event.id}
                     onClick={() => onNavigateToCalendar?.('day')}

@@ -11,22 +11,25 @@ import {
   Watch,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { NotificationPreferencesEditor } from './NotificationPreferencesEditor';
 import { VoiceChatOrb } from './VoiceChatOrb';
 import { useTheme } from './ThemeProvider';
 import { useAppShell } from '@/context/AppShellContext';
+import {
+  AZURE_PT_BR_VOICES,
+  labelForAzureVoiceId,
+  normalizeStoredAssistantVoice,
+  type AssistantVoice,
+} from '@/lib/azureVoicesPtBR';
 import { AuthSessionExpiredError, fetchSettings, patchUi } from '@/services/settings';
-
-const VOICE_LABEL_TO_API: Record<string, 'feminine' | 'masculine' | 'neutral'> = {
-  Feminina: 'feminine',
-  Masculina: 'masculine',
-  Neutra: 'neutral',
-};
-
-const VOICE_API_TO_LABEL: Record<string, string> = {
-  feminine: 'Feminina',
-  masculine: 'Masculina',
-  neutral: 'Neutra',
-};
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 const PROVIDER_LABELS: Record<string, string> = {
   google_calendar: 'Google Calendar',
@@ -72,7 +75,7 @@ export function SettingsScreen({
   onNavigateToProfile,
   onOpenMenu,
   onNavigateToHome,
-  onSecurityNavigation,
+  onSecurityNavigation: _onSecurityNavigation,
   onIntegrationNavigation,
   onLogout,
   userName = 'Maria Silva',
@@ -90,9 +93,10 @@ export function SettingsScreen({
 
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [showNotifModal, setShowNotifModal] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState<'light' | 'dark'>('light');
-  const [selectedVoice, setSelectedVoice] = useState('Feminina');
+  const [selectedVoiceId, setSelectedVoiceId] = useState<AssistantVoice>('pt-BR-FranciscaNeural');
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -101,7 +105,7 @@ export function SettingsScreen({
       const data = await fetchSettings();
       setAppearance(data.ui.theme_mode);
       setSelectedTheme(data.ui.theme_mode);
-      setSelectedVoice(VOICE_API_TO_LABEL[data.ui.assistant_voice] ?? 'Feminina');
+      setSelectedVoiceId(normalizeStoredAssistantVoice(data.ui.assistant_voice));
       setNotifSummary(notificationSummary(data.notifications));
       const rank = (p: string) => {
         const i = (INTEGRATION_ORDER as readonly string[]).indexOf(p);
@@ -135,12 +139,6 @@ export function SettingsScreen({
     { value: 'dark' as const, label: 'Escuro', icon: Moon, description: 'Interface com fundo escuro' },
   ];
 
-  const voiceOptions = [
-    { value: 'Feminina', label: 'Feminina', description: 'Voz padrão da Kiki' },
-    { value: 'Masculina', label: 'Masculina', description: 'Voz masculina alternativa' },
-    { value: 'Neutra', label: 'Neutra', description: 'Voz neutra e profissional' },
-  ];
-
   const handleThemeSave = async () => {
     setIsSavingUi(true);
     try {
@@ -159,11 +157,9 @@ export function SettingsScreen({
   };
 
   const handleVoiceSave = async () => {
-    const apiVoice = VOICE_LABEL_TO_API[selectedVoice];
-    if (!apiVoice) return;
     setIsSavingUi(true);
     try {
-      await patchUi({ assistant_voice: apiVoice });
+      await patchUi({ assistant_voice: selectedVoiceId });
       setShowVoiceModal(false);
     } catch (e) {
       if (e instanceof AuthSessionExpiredError) {
@@ -181,14 +177,19 @@ export function SettingsScreen({
       {
         title: 'Preferências',
         items: [
-          { icon: Bell, label: 'Notificações', value: notifSummary, action: 'navigate' as const },
+          { icon: Bell, label: 'Notificações', value: notifSummary, action: 'popup' as const },
           {
             icon: Moon,
             label: 'Tema',
             value: selectedTheme === 'light' ? 'Claro' : 'Escuro',
             action: 'popup' as const,
           },
-          { icon: Volume2, label: 'Voz da assistente', value: selectedVoice, action: 'popup' as const },
+          {
+            icon: Volume2,
+            label: 'Voz da assistente',
+            value: labelForAzureVoiceId(selectedVoiceId),
+            action: 'popup' as const,
+          },
         ],
       },
       {
@@ -201,16 +202,14 @@ export function SettingsScreen({
         })),
       },
     ],
-    [notifSummary, selectedTheme, selectedVoice, integrationRows],
+    [notifSummary, selectedTheme, selectedVoiceId, integrationRows],
   );
 
-  const handleItemClick = (section: string, label: string, action: string) => {
-    if (action === 'navigate') {
+  const handleItemClick = (_section: string, label: string, action: string) => {
+    if (action === 'popup') {
       if (label === 'Notificações') {
-        onSecurityNavigation?.('Notificações');
-      }
-    } else if (action === 'popup') {
-      if (label === 'Tema') {
+        setShowNotifModal(true);
+      } else if (label === 'Tema') {
         setShowThemeModal(true);
       } else if (label === 'Voz da assistente') {
         setShowVoiceModal(true);
@@ -228,7 +227,7 @@ export function SettingsScreen({
             <button
               type="button"
               onClick={onOpenMenu}
-              className="w-10 h-10 rounded-xl hover:bg-muted flex items-center justify-center btn-apple"
+              className="w-10 h-10 rounded-full hover:bg-muted flex items-center justify-center btn-apple"
             >
               <Menu className="w-5 h-5" />
             </button>
@@ -401,39 +400,64 @@ export function SettingsScreen({
             className="fixed inset-0 bg-black/50 z-50 backdrop-blur-sm"
             onClick={() => setShowVoiceModal(false)}
           />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-background rounded-3xl shadow-2xl z-50 p-6">
-            <h2 className="text-xl mb-4">Voz da assistente</h2>
-            <p className="text-sm text-muted-foreground mb-6">
-              Escolha a voz que a Kiki usará para falar com você
-            </p>
-
-            <div className="space-y-3 mb-6">
-              {voiceOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setSelectedVoice(option.value)}
-                  className={`w-full p-4 rounded-xl border-2 transition-all btn-apple text-left ${
-                    selectedVoice === option.value ? `border-purple-500 bg-purple-50 dark:bg-purple-950/40` : 'border-border'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 ${
-                        selectedVoice === option.value ? 'border-purple-500' : 'border-gray-300'
-                      }`}
-                    >
-                      {selectedVoice === option.value && (
-                        <div className="w-3 h-3 rounded-full bg-purple-500" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm mb-1">{option.label}</p>
-                      <p className="text-xs text-muted-foreground">{option.description}</p>
-                    </div>
-                  </div>
-                </button>
-              ))}
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="voice-modal-title"
+            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[94%] max-w-2xl bg-background rounded-3xl shadow-2xl z-50 p-5 sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="voice-modal-title" className="text-xl mb-1">
+              Voz da assistente
+            </h2>
+            {/* Altura fixa + overflow nativo: Radix ScrollArea com só max-height não limita o viewport e o scroll some. */}
+            <div className="h-[min(420px,52vh)] overflow-y-auto overscroll-contain rounded-xl border border-border mb-5 touch-pan-y">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-10 pl-3" />
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Gênero</TableHead>
+                    <TableHead>Tipo</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {AZURE_PT_BR_VOICES.map((v) => {
+                    const selected = selectedVoiceId === v.id;
+                    return (
+                      <TableRow
+                        key={v.id}
+                        data-state={selected ? 'selected' : undefined}
+                        className={`cursor-pointer ${selected ? 'bg-purple-50 dark:bg-purple-950/35' : ''}`}
+                        onClick={() => setSelectedVoiceId(v.id)}
+                      >
+                        <TableCell className="pl-3">
+                          <div
+                            className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                              selected ? 'border-purple-500' : 'border-muted-foreground/40'
+                            }`}
+                            aria-hidden
+                          >
+                            {selected ? <div className="w-2 h-2 rounded-full bg-purple-500" /> : null}
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-normal font-medium">
+                          {v.displayName}
+                          {v.highlight ? (
+                            <span className="block text-xs font-normal text-muted-foreground mt-0.5">
+                              {v.highlight}
+                            </span>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{v.gender}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">
+                          {v.kind === 'multilingual' ? 'Multilíngue' : 'pt-BR'}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
 
             <div className="space-y-2">
@@ -453,6 +477,42 @@ export function SettingsScreen({
                 Cancelar
               </button>
             </div>
+          </div>
+        </>
+      )}
+
+      {showNotifModal && (
+        <>
+          <div
+            role="presentation"
+            className="fixed inset-0 bg-black/50 z-50 backdrop-blur-sm"
+            onClick={() => setShowNotifModal(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="notif-modal-title"
+            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 flex max-h-[min(640px,92vh)] w-[94%] max-w-lg min-h-0 flex-col overflow-hidden rounded-3xl bg-background p-5 shadow-2xl sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 shrink-0">
+              <h2 id="notif-modal-title" className="text-xl mb-1">
+                Notificações
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Escolha canais, tipos de alerta e o tom dos lembretes.
+              </p>
+            </div>
+            <NotificationPreferencesEditor
+              variant="modal"
+              themeColor={themeColor}
+              onSessionExpired={onSessionExpired}
+              onModalCancel={() => setShowNotifModal(false)}
+              onModalSaved={() => {
+                void load();
+                setShowNotifModal(false);
+              }}
+            />
           </div>
         </>
       )}

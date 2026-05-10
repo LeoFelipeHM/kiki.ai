@@ -1,4 +1,14 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+/** Base URL do backend: `frontend/src/.env` → `VITE_API_BASE_URL` (Vite só expõe variáveis `VITE_*`). */
+function resolveApiBaseUrl(): string {
+  const raw =
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_BACKEND_URL ||
+    '';
+  const trimmed = String(raw).trim().replace(/\/$/, '');
+  return trimmed || 'http://127.0.0.1:8000';
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 const ACCESS_TOKEN_KEY = 'kiki.auth.access_token';
 const REFRESH_TOKEN_KEY = 'kiki.auth.refresh_token';

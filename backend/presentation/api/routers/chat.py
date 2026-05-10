@@ -1,6 +1,8 @@
 import json
 import os
-from typing import Annotated
+import queue
+import threading
+from typing import Annotated, Any
 
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -30,6 +32,9 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 CalendarServiceDep = Annotated[CalendarService, Depends(get_calendar_service)]
 NotesServiceDep = Annotated[NotesService, Depends(get_notes_service)]
 
+# Enquanto o agente (tools + LLM) trabalha sem emitir deltas, proxies costumam cortar a conexão (~60s).
+_SSE_KEEPALIVE = float(os.getenv("SSE_KEEPALIVE_SECONDS", "12").strip() or "12")
+
 
 @router.post("/stream")
 def chat_completion_stream(
@@ -51,32 +56,75 @@ def chat_completion_stream(
     pairs = [(m.role, m.content) for m in payload.messages]
 
     def sse():
-        conn: psycopg.Connection | None = None
-        try:
-            # Importante: em StreamingResponse, dependências com `yield` podem ser finalizadas
-            # antes do gerador terminar. Por isso a conexão precisa viver dentro do gerador.
-            conn = psycopg.connect(settings.database_url, row_factory=dict_row)
-            calendar_service = CalendarService(conn, PostgresCalendarRepository(conn))
-            notes_service = NotesService(conn, PostgresNotesRepository(conn))
+        # Primeiro byte rápido: reduz timeout de “primeira resposta” em proxies e mantém o socket vivo.
+        yield ": stream-open\n\n"
 
-            stream = generate_reply_stream_with_tools(
-                pairs,
-                current_user_id=str(current_user["id"]),
-                current_user_timezone=str(current_user.get("timezone") or ""),
-                calendar_service=calendar_service,
-                notes_service=notes_service,
-            )
-            for delta in stream:
-                yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
-        except OpenAIChatConfigurationError as exc:
-            yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
-            return
-        except OpenAIChatCompletionError as exc:
-            yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
-            return
+        result_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+        worker_conn: list[psycopg.Connection | None] = [None]
+
+        def produce() -> None:
+            try:
+                worker_conn[0] = psycopg.connect(settings.database_url, row_factory=dict_row)
+                conn = worker_conn[0]
+                calendar_service = CalendarService(conn, PostgresCalendarRepository(conn))
+                notes_service = NotesService(conn, PostgresNotesRepository(conn))
+
+                stream = generate_reply_stream_with_tools(
+                    pairs,
+                    current_user_id=str(current_user["id"]),
+                    current_user_timezone=str(current_user.get("timezone") or ""),
+                    calendar_service=calendar_service,
+                    notes_service=notes_service,
+                )
+                for delta in stream:
+                    result_queue.put(("delta", delta))
+                result_queue.put(("finished", None))
+            except OpenAIChatConfigurationError as exc:
+                result_queue.put(("config_err", exc))
+            except OpenAIChatCompletionError as exc:
+                result_queue.put(("chat_err", exc))
+            except Exception as exc:
+                result_queue.put(("fatal", exc))
+            finally:
+                c = worker_conn[0]
+                if c is not None:
+                    try:
+                        c.close()
+                    except Exception:
+                        pass
+                    worker_conn[0] = None
+
+        thread = threading.Thread(target=produce, name="chat-sse-producer", daemon=True)
+        thread.start()
+
+        try:
+            while True:
+                try:
+                    kind, payload = result_queue.get(timeout=_SSE_KEEPALIVE)
+                except queue.Empty:
+                    # Comentário SSE: mantém conexão ativa durante execução longa do agente (tools + modelo).
+                    yield ": ping\n\n"
+                    if not thread.is_alive() and result_queue.empty():
+                        yield f"data: {json.dumps({'error': 'Processamento interrompido no servidor.'}, ensure_ascii=False)}\n\n"
+                        return
+                    continue
+
+                if kind == "delta":
+                    yield f"data: {json.dumps({'delta': payload}, ensure_ascii=False)}\n\n"
+                elif kind == "finished":
+                    break
+                elif kind == "config_err":
+                    yield f"data: {json.dumps({'error': str(payload)}, ensure_ascii=False)}\n\n"
+                    return
+                elif kind == "chat_err":
+                    yield f"data: {json.dumps({'error': str(payload)}, ensure_ascii=False)}\n\n"
+                    return
+                elif kind == "fatal":
+                    yield f"data: {json.dumps({'error': str(payload)}, ensure_ascii=False)}\n\n"
+                    return
         finally:
-            if conn is not None:
-                conn.close()
+            thread.join(timeout=600.0)
+
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(

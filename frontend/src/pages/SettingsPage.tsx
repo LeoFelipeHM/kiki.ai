@@ -18,9 +18,7 @@ export function SettingsPage() {
       }
       onLogout={onLogout}
       onSecurityNavigation={(type) => {
-        if (type === 'Notificações') {
-          navigate(ROUTES.profileNotifications, { state: { from: ROUTES.settings } });
-        } else if (type === 'Alterar senha') {
+        if (type === 'Alterar senha') {
           navigate(ROUTES.profilePassword, { state: { from: ROUTES.settings } });
         } else if (type === 'Privacidade') {
           navigate(ROUTES.profilePrivacy, { state: { from: ROUTES.settings } });

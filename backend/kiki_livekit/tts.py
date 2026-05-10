@@ -8,8 +8,12 @@ DEFAULT_VOICE = "pt-BR-FranciscaNeural"
 DEFAULT_SAMPLE_RATE = 24000
 
 
-def build_tts() -> FixedAzureTTS:
-    voice = (os.getenv("AZURE_TTS_VOICE") or os.getenv("AZURE_VOICE_NAME") or DEFAULT_VOICE).strip() or DEFAULT_VOICE
+def build_tts(*, voice_override: str | None = None) -> FixedAzureTTS:
+    voice = (voice_override or "").strip()
+    if not voice:
+        voice = (
+            (os.getenv("AZURE_TTS_VOICE") or os.getenv("AZURE_VOICE_NAME") or DEFAULT_VOICE).strip() or DEFAULT_VOICE
+        )
     language = locale_from_voice_name(voice)
 
     sample_rate_raw = (os.getenv("AZURE_TTS_SAMPLE_RATE") or str(DEFAULT_SAMPLE_RATE)).strip()

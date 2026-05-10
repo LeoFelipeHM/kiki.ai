@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from application.azure_voice_ids import AZURE_PT_BR_VOICE_IDS_FROZEN
 
 
 ThemeMode = Literal["light", "dark"]
-AssistantVoice = Literal["feminine", "masculine", "neutral"]
 ReminderStyle = Literal["friendly", "professional", "motivational"]
 IntegrationProvider = Literal["google_calendar", "gmail", "outlook", "apple_watch"]
 IntegrationStatus = Literal["connected", "disconnected", "error"]
@@ -13,12 +14,28 @@ IntegrationStatus = Literal["connected", "disconnected", "error"]
 
 class UiPrefs(BaseModel):
     theme_mode: ThemeMode
-    assistant_voice: AssistantVoice
+    assistant_voice: str
+
+    @field_validator("assistant_voice")
+    @classmethod
+    def _assistant_voice_allowed(cls, v: str) -> str:
+        if v not in AZURE_PT_BR_VOICE_IDS_FROZEN:
+            raise ValueError("assistant_voice inválido.")
+        return v
 
 
 class SettingsUiPatch(BaseModel):
     theme_mode: ThemeMode | None = None
-    assistant_voice: AssistantVoice | None = None
+    assistant_voice: str | None = None
+
+    @field_validator("assistant_voice")
+    @classmethod
+    def _assistant_voice_allowed_patch(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in AZURE_PT_BR_VOICE_IDS_FROZEN:
+            raise ValueError("assistant_voice inválido.")
+        return v
 
 
 class NotificationPreferencesResponse(BaseModel):

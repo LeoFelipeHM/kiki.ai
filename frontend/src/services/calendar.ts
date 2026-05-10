@@ -30,6 +30,7 @@ export function mapApiEventToCalendarEvent(row: CalendarEventApi): CalendarEvent
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     type: row.event_type as CalendarEventType,
+    status: row.status,
     description: row.description ?? undefined,
     color: row.color ?? undefined,
     guests: row.guests?.map((g) => g.name) ?? [],

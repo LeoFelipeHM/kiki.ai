@@ -1,4 +1,5 @@
 import { ArrowLeft, AlertTriangle, Trash2, X } from 'lucide-react';
+import { backNavButtonClassName } from '@/lib/backNavButton';
 import { useState } from 'react';
 
 interface DeleteAccountScreenProps {
@@ -43,12 +44,9 @@ export function DeleteAccountScreen({ onNavigateBack, onManageSubscription }: De
   return (
     <div className="flex-1 flex flex-col bg-background">
       <div className="px-5 pt-8 pb-4 flex-1 overflow-y-auto">
-        <button
-          onClick={onNavigateBack}
-          className="flex items-center gap-2 mb-6 text-muted-foreground hover:text-foreground transition-colors btn-apple"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm">Voltar</span>
+        <button type="button" onClick={onNavigateBack} className={`${backNavButtonClassName} mb-6`}>
+          <ArrowLeft className="w-4 h-4 shrink-0" />
+          <span>Voltar</span>
         </button>
 
         <div className="mb-8">

@@ -5,20 +5,14 @@ import {
   Calendar,
   Globe,
   Clock,
-  Bell,
   Lock,
-  Sparkles,
   ChevronRight,
   Edit2,
-  Sun,
-  Moon,
-  Zap,
-  Link,
   ArrowLeft,
   CreditCard,
-  Check,
 } from 'lucide-react';
 import { useState } from 'react';
+import { backNavButtonClassName } from '@/lib/backNavButton';
 import { useTheme } from './ThemeProvider';
 import { VoiceChatOrb } from './VoiceChatOrb';
 
@@ -81,23 +75,23 @@ export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNa
     <>
       <div className="flex-1 overflow-y-auto pb-16 scrollbar-hide bg-background">
       <div className="px-5 pt-8 pb-4">
-        <button
-          onClick={onNavigateBack}
-          className="flex items-center gap-2 mb-4 text-muted-foreground hover:text-foreground transition-colors btn-apple"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm">Voltar</span>
+        <button type="button" onClick={onNavigateBack} className={`${backNavButtonClassName} mb-4`}>
+          <ArrowLeft className="w-4 h-4 shrink-0" />
+          <span>Voltar</span>
         </button>
 
         {/* Profile Header */}
         <div className="flex flex-col items-center mb-6">
-          <div className="relative">
-            <div className={`w-24 h-24 rounded-full bg-gradient-to-br ${themeColor} flex items-center justify-center text-3xl text-white shadow-lg`}>
+          <div className="relative group/avatar">
+            <div
+              className={`w-24 h-24 rounded-full bg-gradient-to-br ${themeColor} flex items-center justify-center text-3xl text-white shadow-lg transition-[transform,box-shadow] duration-300 ease-out motion-safe:group-hover/avatar:scale-[1.06] motion-safe:group-hover/avatar:shadow-xl`}
+            >
               {profileData.name.charAt(0).toUpperCase()}
             </div>
             <button
+              type="button"
               onClick={() => onEditProfileField?.('photo')}
-              className={`absolute bottom-0 right-0 w-8 h-8 rounded-full bg-gradient-to-br ${themeColor} shadow-lg flex items-center justify-center border-2 border-background btn-apple hover:opacity-90`}
+              className={`absolute bottom-0 right-0 w-8 h-8 rounded-full bg-gradient-to-br ${themeColor} shadow-lg flex items-center justify-center border-2 border-background btn-apple transition-transform duration-200 ease-out hover:scale-110 active:scale-95`}
             >
               <Edit2 className="w-4 h-4 text-white" />
             </button>
@@ -112,10 +106,11 @@ export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNa
           {profileSections.map((section, sectionIndex) => (
             <div key={sectionIndex}>
               <h3 className="text-xs mb-2 text-muted-foreground">{section.title}</h3>
-              <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm transition-[box-shadow,border-color] duration-300 ease-out hover:border-muted-foreground/20 hover:shadow-md motion-safe:hover:-translate-y-px">
                 {section.items.map((item, itemIndex) => (
                   <button
                     key={itemIndex}
+                    type="button"
                     onClick={() => {
                       if (section.title === 'Perfil Pessoal') {
                         onEditProfileField?.(item.label);
@@ -123,20 +118,24 @@ export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNa
                         onSecurityNavigation?.(item.label);
                       }
                     }}
-                    className={`w-full flex items-center gap-3 p-3 hover:bg-muted btn-apple ${
+                    className={`group/item flex w-full items-center gap-3 p-3 btn-apple transition-colors duration-200 hover:bg-muted/90 active:bg-muted ${
                       itemIndex !== section.items.length - 1 ? 'border-b border-border' : ''
                     }`}
                   >
-                    <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                      <item.icon className="w-4 h-4 text-foreground" />
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted transition-[transform,background-color] duration-200 ease-out motion-safe:group-hover/item:scale-105 motion-safe:group-hover/item:bg-background">
+                      <item.icon className="w-4 h-4 text-foreground transition-transform duration-200 motion-safe:group-hover/item:scale-110" />
                     </div>
-                    <div className="flex-1 text-left">
-                      <p className="text-sm">{item.label}</p>
+                    <div className="min-w-0 flex-1 text-left">
+                      <p className="text-sm transition-colors duration-200 group-hover/item:text-foreground">
+                        {item.label}
+                      </p>
                       {item.value && (
-                        <p className="text-xs text-muted-foreground">{item.value}</p>
+                        <p className="text-xs text-muted-foreground transition-colors duration-200 group-hover/item:text-muted-foreground">
+                          {item.value}
+                        </p>
                       )}
                     </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-[transform,color] duration-200 ease-out motion-safe:group-hover/item:translate-x-1 motion-safe:group-hover/item:text-foreground" />
                   </button>
                 ))}
               </div>
@@ -146,8 +145,9 @@ export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNa
 
         <div className="mt-6 text-center">
           <button
+            type="button"
             onClick={() => setShowLogoutModal(true)}
-            className="text-sm text-red-500 hover:text-red-600 transition-colors"
+            className="text-sm text-red-500 transition-all duration-200 ease-out hover:text-red-600 motion-safe:hover:scale-[1.03] active:scale-[0.98]"
           >
             Sair da conta
           </button>
@@ -169,17 +169,19 @@ export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNa
 
             <div className="space-y-2">
               <button
+                type="button"
                 onClick={() => {
                   setShowLogoutModal(false);
                   onLogout?.();
                 }}
-                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-full font-semibold btn-apple transition-all"
+                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-full font-semibold btn-apple transition-colors duration-200"
               >
                 Sim, sair da conta
               </button>
               <button
+                type="button"
                 onClick={() => setShowLogoutModal(false)}
-                className="w-full bg-muted text-foreground py-3 rounded-full font-semibold btn-apple"
+                className="w-full bg-muted text-foreground py-3 rounded-full font-semibold btn-apple transition-colors duration-200 hover:bg-muted/80"
               >
                 Cancelar
               </button>

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTheme } from './ThemeProvider';
+import { backNavIconButtonClassName } from '@/lib/backNavButton';
 import { AuthSessionExpiredError } from '@/services/auth';
 import {
   listAdminUsers,
@@ -186,7 +187,7 @@ export function AdminUsersScreen({
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-background">
       <header className="shrink-0 px-4 pt-6 pb-3 border-b border-border flex items-center gap-3">
-        <button type="button" onClick={onNavigateBack} className="btn-apple p-2 rounded-xl hover:bg-muted">
+        <button type="button" onClick={onNavigateBack} className={backNavIconButtonClassName}>
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex-1 min-w-0">
@@ -196,7 +197,7 @@ export function AdminUsersScreen({
           </h1>
           <p className="text-xs text-muted-foreground">Criar, editar e remover contas</p>
         </div>
-        <button type="button" onClick={onOpenMenu} className="btn-apple p-2 rounded-xl hover:bg-muted">
+        <button type="button" onClick={onOpenMenu} className={backNavIconButtonClassName}>
           <Menu className="w-5 h-5" />
         </button>
       </header>

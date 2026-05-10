@@ -2,11 +2,11 @@ from typing import Any
 
 import psycopg
 
+from application.azure_voice_ids import AZURE_PT_BR_VOICE_IDS_FROZEN
 from application.bootstrap_defaults import bootstrap_user_defaults
 from infrastructure.persistence.postgres_settings_repository import PostgresSettingsRepository
 
 _THEME_MODES = frozenset({"light", "dark"})
-_VOICES = frozenset({"feminine", "masculine", "neutral"})
 _REMINDER_STYLES = frozenset({"friendly", "professional", "motivational"})
 _PROVIDERS = frozenset({"google_calendar", "gmail", "outlook", "apple_watch"})
 _INTEGRATION_PATCH_STATUSES = frozenset({"connected", "disconnected"})
@@ -31,7 +31,7 @@ class SettingsService:
     def patch_ui(self, user_id: str, *, theme_mode: str | None, assistant_voice: str | None) -> dict[str, Any]:
         if theme_mode is not None and theme_mode not in _THEME_MODES:
             raise ValueError("theme_mode inválido.")
-        if assistant_voice is not None and assistant_voice not in _VOICES:
+        if assistant_voice is not None and assistant_voice not in AZURE_PT_BR_VOICE_IDS_FROZEN:
             raise ValueError("assistant_voice inválido.")
         if theme_mode is None and assistant_voice is None:
             raise ValueError("Nenhum campo para atualizar.")

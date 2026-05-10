@@ -11,6 +11,7 @@ from livekit.agents import Agent, AgentServer, AgentSession, JobContext, TurnHan
 from livekit.plugins import silero
 from psycopg.rows import dict_row
 
+from application.azure_voice_ids import AZURE_PT_BR_VOICE_IDS_FROZEN
 from application.calendar_service import CalendarService
 from application.notes_service import NotesService
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
@@ -43,6 +44,17 @@ def _fetch_user_timezone(database_url: str, user_id: str) -> str:
             row = cur.fetchone()
     tz = (row or {}).get("timezone") if isinstance(row, dict) else None
     return str(tz or "America/Sao_Paulo")
+
+
+def _fetch_user_assistant_voice(database_url: str, user_id: str) -> str | None:
+    with psycopg.connect(database_url, row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT assistant_voice FROM users WHERE id = %s::uuid", (user_id,))
+            row = cur.fetchone()
+    if not isinstance(row, dict):
+        return None
+    v = row.get("assistant_voice")
+    return str(v).strip() if v else None
 
 
 class KikiVoiceAssistant(Agent):
@@ -126,11 +138,17 @@ async def kiki_voice_entrypoint(ctx: JobContext) -> None:
     room_name = str(getattr(ctx.room, "name", "") or "")
     user_id = _user_id_from_room_name(room_name) or "user"
     user_timezone = _fetch_user_timezone(database_url, user_id) if user_id != "user" else "America/Sao_Paulo"
+    voice_pref = (
+        _fetch_user_assistant_voice(database_url, user_id)
+        if user_id != "user"
+        else None
+    )
+    voice_override = voice_pref if voice_pref and voice_pref in AZURE_PT_BR_VOICE_IDS_FROZEN else None
 
     session = AgentSession(
         stt=build_stt(),
         llm=build_llm(),
-        tts=build_tts(),
+        tts=build_tts(voice_override=voice_override),
         vad=silero.VAD.load(activation_threshold=0.3),
         turn_handling=TurnHandlingOptions(
             turn_detection="stt",

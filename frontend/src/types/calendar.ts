@@ -7,6 +7,8 @@ export interface CalendarEvent {
   startsAt: string;
   endsAt: string;
   type: CalendarEventType;
+  /** confirmed | completed (tarefas concluídas), etc. */
+  status?: string;
   guests?: string[];
   description?: string;
   color?: string;

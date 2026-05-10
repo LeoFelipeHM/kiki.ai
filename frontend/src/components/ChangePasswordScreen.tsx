@@ -2,6 +2,7 @@ import { ArrowLeft, Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useTheme } from './ThemeProvider';
 import { useAppShell } from '@/context/AppShellContext';
+import { backNavButtonClassName } from '@/lib/backNavButton';
 import { AuthSessionExpiredError, changePassword } from '@/services/auth';
 
 interface ChangePasswordScreenProps {
@@ -54,13 +55,9 @@ export function ChangePasswordScreen({ onNavigateBack, onSuccess }: ChangePasswo
   return (
     <div className="flex-1 flex flex-col bg-background">
       <div className="px-5 pt-8 pb-4 flex-1 overflow-y-auto">
-        <button
-          type="button"
-          onClick={onNavigateBack}
-          className="flex items-center gap-2 mb-6 text-muted-foreground hover:text-foreground transition-colors btn-apple"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm">Voltar</span>
+        <button type="button" onClick={onNavigateBack} className={`${backNavButtonClassName} mb-6`}>
+          <ArrowLeft className="w-4 h-4 shrink-0" />
+          <span>Voltar</span>
         </button>
 
         <div className="mb-8">

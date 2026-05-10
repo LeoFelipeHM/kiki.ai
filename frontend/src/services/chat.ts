@@ -27,7 +27,8 @@ export async function sendChat(messages: ChatApiMessage[]): Promise<string> {
 
 export interface StreamChatHandlers {
   onDelta: (delta: string) => void;
-  onDone: () => void;
+  /** `true` = fluxo terminou sem `data: [DONE]` (rede/proxy); texto pode estar incompleto. */
+  onDone: (interrupted?: boolean) => void;
   onError: (message: string) => void;
 }
 
@@ -82,7 +83,7 @@ export async function streamChat(messages: ChatApiMessage[], handlers: StreamCha
   const handlePayload = (raw: string): boolean => {
     if (raw === '[DONE]') {
       outcome = 'done';
-      handlers.onDone();
+      handlers.onDone(false);
       return true;
     }
     try {
@@ -92,7 +93,7 @@ export async function streamChat(messages: ChatApiMessage[], handlers: StreamCha
         handlers.onError(obj.error);
         return true;
       }
-      if (typeof obj.delta === 'string' && obj.delta.length > 0) {
+      if (typeof obj.delta === 'string') {
         handlers.onDelta(obj.delta);
       }
     } catch {
@@ -107,6 +108,7 @@ export async function streamChat(messages: ChatApiMessage[], handlers: StreamCha
       const { done, value } = await reader.read();
       if (done) break;
       carry += decoder.decode(value, { stream: true });
+      carry = carry.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
       const blocks = carry.split('\n\n');
       carry = blocks.pop() ?? '';
@@ -133,8 +135,7 @@ export async function streamChat(messages: ChatApiMessage[], handlers: StreamCha
     }
 
     if (outcome === 'pending') {
-      outcome = 'done';
-      handlers.onDone();
+      handlers.onDone(true);
     }
   } finally {
     reader.releaseLock();

@@ -1,4 +1,5 @@
-import { ArrowLeft, CreditCard, Check, Calendar, Receipt, AlertCircle, Crown, Sparkles } from 'lucide-react';
+import { ArrowLeft, CreditCard, Check, Receipt, Crown } from 'lucide-react';
+import { backNavButtonClassName } from '@/lib/backNavButton';
 import { useState } from 'react';
 
 interface ManageSubscriptionScreenProps {
@@ -90,14 +91,11 @@ export function ManageSubscriptionScreen({ onNavigateBack }: ManageSubscriptionS
   ];
 
   return (
-    <div className="flex-1 flex flex-col bg-background">
-      <div className="px-5 pt-8 pb-4 flex-1 overflow-y-auto">
-        <button
-          onClick={onNavigateBack}
-          className="flex items-center gap-2 mb-6 text-muted-foreground hover:text-foreground transition-colors btn-apple"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm">Voltar</span>
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-background">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-8 pb-4 touch-pan-y">
+        <button type="button" onClick={onNavigateBack} className={`${backNavButtonClassName} mb-6`}>
+          <ArrowLeft className="w-4 h-4 shrink-0" />
+          <span>Voltar</span>
         </button>
 
         <div className="mb-8">
@@ -158,7 +156,7 @@ export function ManageSubscriptionScreen({ onNavigateBack }: ManageSubscriptionS
                 }`}
               >
                 {plan.popular && selectedPlan !== plan.id && (
-                  <div className="absolute -top-2 left-4 px-3 py-0.5 bg-gradient-to-r ${themeColor} text-white text-xs font-semibold rounded-full">
+                  <div className="absolute -top-2 left-4 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 px-3 py-0.5 text-xs font-semibold text-white">
                     Mais popular
                   </div>
                 )}
@@ -290,7 +288,7 @@ export function ManageSubscriptionScreen({ onNavigateBack }: ManageSubscriptionS
 
       </div>
 
-      <div className="p-5 space-y-2">
+      <div className="shrink-0 space-y-2 border-t border-border bg-background p-5">
         <button
           onClick={() => {
             // Salva as alterações do plano e método de pagamento

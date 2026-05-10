@@ -1,4 +1,5 @@
 import { ArrowLeft, Camera, Upload } from 'lucide-react';
+import { backNavButtonClassName } from '@/lib/backNavButton';
 import { useState } from 'react';
 import { useTheme } from './ThemeProvider';
 
@@ -30,12 +31,9 @@ export function EditProfilePhoto({ onNavigateBack, onSaveColor, currentColor = '
   return (
     <div className="flex-1 flex flex-col bg-background">
       <div className="px-5 pt-8 pb-4">
-        <button
-          onClick={onNavigateBack}
-          className="flex items-center gap-2 mb-6 text-muted-foreground hover:text-foreground transition-colors btn-apple"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm">Voltar</span>
+        <button type="button" onClick={onNavigateBack} className={`${backNavButtonClassName} mb-6`}>
+          <ArrowLeft className="w-4 h-4 shrink-0" />
+          <span>Voltar</span>
         </button>
 
         <h1 className="text-2xl mb-2">Foto de Perfil</h1>

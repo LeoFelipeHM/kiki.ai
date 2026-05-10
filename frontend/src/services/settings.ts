@@ -1,7 +1,9 @@
+import type { AssistantVoice } from '@/lib/azureVoicesPtBR';
+
 import { authorizedFetch, AuthSessionExpiredError } from './auth';
 
 export type ThemeMode = 'light' | 'dark';
-export type AssistantVoice = 'feminine' | 'masculine' | 'neutral';
+export type { AssistantVoice };
 
 export interface NotificationPreferencesDto {
   push_enabled: boolean;

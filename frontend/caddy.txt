@@ -1,0 +1,12 @@
+{
+    email admin@heykiki.com.br
+}
+
+www.heykiki.com.br {
+    reverse_proxy localhost:5173
+}
+
+api.heykiki.com.br {
+    reverse_proxy localhost:8000
+}
+
