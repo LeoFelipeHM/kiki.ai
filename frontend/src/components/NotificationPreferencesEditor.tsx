@@ -1,11 +1,25 @@
-import { ArrowLeft, Bell, Mail, MessageSquare, Calendar, Sparkles } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { ArrowLeft, Bell, BellOff, Mail, MessageSquare, Calendar, Sparkles } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { backNavButtonClassName } from '@/lib/backNavButton';
 import {
   AuthSessionExpiredError,
   fetchSettings,
   patchNotifications,
+  type NotificationPreferencesDto,
 } from '@/services/settings';
+import {
+  getNotificationPermission,
+  isNotificationApiSupported,
+  requestNotificationPermission,
+  showBrowserNotification,
+} from '@/lib/browserNotifications';
+import {
+  isWebPushSupported,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from '@/lib/pushSubscription';
+import { sendPushTest, PushNotConfiguredError } from '@/services/push';
+import { useAppShell } from '@/context/AppShellContext';
 
 export type NotificationPreferencesEditorProps = {
   variant: 'page' | 'modal';
@@ -102,6 +116,7 @@ export function NotificationPreferencesEditor({
   onModalCancel,
   onModalSaved,
 }: NotificationPreferencesEditorProps) {
+  const { setNotificationPrefs } = useAppShell();
   const [notifications, setNotifications] = useState<NotificationsState>({
     pushEnabled: true,
     emailEnabled: true,
@@ -120,6 +135,123 @@ export function NotificationPreferencesEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    getNotificationPermission(),
+  );
+  const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
+
+  const refreshPermission = useCallback(() => {
+    setPermission(getNotificationPermission());
+  }, []);
+
+  useEffect(() => {
+    refreshPermission();
+    if (typeof document === 'undefined') return;
+    const onVis = () => {
+      if (document.visibilityState === 'visible') refreshPermission();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [refreshPermission]);
+
+  const handleRequestPermission = useCallback(async () => {
+    setPermissionMessage(null);
+    const result = await requestNotificationPermission();
+    setPermission(result);
+    if (result === 'granted') {
+      if (isWebPushSupported()) {
+        try {
+          await subscribeToPush();
+          setPermissionMessage(
+            'Permissão concedida e dispositivo registrado para notificações em background.',
+          );
+        } catch (e) {
+          if (e instanceof PushNotConfiguredError) {
+            setPermissionMessage(
+              'Permissão concedida. Notificações em background indisponíveis (Web Push não configurado).',
+            );
+          } else {
+            setPermissionMessage(
+              'Permissão concedida, mas falhou ao registrar o dispositivo: ' +
+                (e instanceof Error ? e.message : 'erro desconhecido'),
+            );
+          }
+        }
+      } else {
+        setPermissionMessage(
+          'Permissão concedida. Este navegador não suporta notificações em background.',
+        );
+      }
+    } else if (result === 'denied') {
+      setPermissionMessage(
+        'Permissão negada no navegador. Habilite manualmente nas configurações do site.',
+      );
+    } else if (result === 'unsupported') {
+      setPermissionMessage('Este navegador não suporta notificações.');
+    } else {
+      setPermissionMessage('A solicitação foi cancelada. Tente novamente.');
+    }
+  }, []);
+
+  const handleSendTest = useCallback(async () => {
+    setPermissionMessage(null);
+    let perm = permission;
+    if (perm === 'default') {
+      perm = await requestNotificationPermission();
+      setPermission(perm);
+    }
+    if (perm !== 'granted') {
+      setPermissionMessage(
+        perm === 'unsupported'
+          ? 'Seu navegador não suporta notificações.'
+          : 'Conceda permissão no navegador para enviar notificações.',
+      );
+      return;
+    }
+
+    if (isWebPushSupported()) {
+      try {
+        await subscribeToPush();
+        const result = await sendPushTest();
+        if (result.delivered > 0) {
+          setPermissionMessage(
+            `Push enviado pelo servidor (${result.delivered} dispositivo${result.delivered > 1 ? 's' : ''}).`,
+          );
+          return;
+        }
+        setPermissionMessage(
+          'Servidor não tinha dispositivo registrado. Tentando notificação local…',
+        );
+      } catch (e) {
+        if (e instanceof PushNotConfiguredError) {
+          setPermissionMessage(
+            'Web Push não está configurado no servidor. Usando notificação local.',
+          );
+        } else {
+          setPermissionMessage(
+            'Falha no push pelo servidor: ' +
+              (e instanceof Error ? e.message : 'erro desconhecido') +
+              '. Usando notificação local.',
+          );
+        }
+      }
+    }
+
+    const ok = showBrowserNotification({
+      title: 'Kiki: notificação de teste',
+      body: 'Tudo certo! Você verá lembretes assim quando chegar a hora.',
+      tag: `kiki:test:${Date.now()}`,
+      withSound: notifications.soundEnabled,
+      withVibration: notifications.vibrationEnabled,
+    });
+    if (!ok) {
+      setPermissionMessage(
+        (prev) =>
+          (prev ? prev + ' ' : '') +
+          'Não foi possível exibir a notificação local — verifique as permissões do navegador.',
+      );
+    }
+  }, [permission, notifications.soundEnabled, notifications.vibrationEnabled]);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -129,6 +261,7 @@ export function NotificationPreferencesEditor({
       const mapped = dtoToState(data.notifications);
       setNotifications(mapped.notifications);
       setReminderStyle(mapped.reminderStyle);
+      setNotificationPrefs(data.notifications);
     } catch (e) {
       if (e instanceof AuthSessionExpiredError) {
         onSessionExpired();
@@ -138,11 +271,41 @@ export function NotificationPreferencesEditor({
     } finally {
       setIsLoading(false);
     }
-  }, [onSessionExpired]);
+  }, [onSessionExpired, setNotificationPrefs]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const permissionBanner = useMemo(() => {
+    if (!notifications.pushEnabled) return null;
+    if (permission === 'unsupported') {
+      return {
+        tone: 'warning' as const,
+        text: 'Este navegador não suporta notificações nativas.',
+        action: null,
+      };
+    }
+    if (permission === 'granted') {
+      return {
+        tone: 'success' as const,
+        text: 'Notificações do navegador ativas. Lembretes serão exibidos enquanto a Kiki estiver aberta.',
+        action: null,
+      };
+    }
+    if (permission === 'denied') {
+      return {
+        tone: 'destructive' as const,
+        text: 'Notificações bloqueadas. Habilite no cadeado ao lado da URL e atualize a página.',
+        action: null,
+      };
+    }
+    return {
+      tone: 'info' as const,
+      text: 'Conceda permissão para que a Kiki envie lembretes pelo navegador.',
+      action: 'request' as const,
+    };
+  }, [notifications.pushEnabled, permission]);
 
   const reminderStyles = [
     { name: 'Amigável', description: 'Tom casual e encorajador' },
@@ -155,21 +318,43 @@ export function NotificationPreferencesEditor({
     setSaveMessage(null);
   };
 
-  const notificationChannels = [
+  const notificationChannels: Array<{
+    title: string;
+    items: Array<{
+      key: keyof NotificationsState;
+      icon: typeof Bell;
+      label: string;
+      description: string;
+      badge?: string;
+    }>;
+  }> = [
     {
       title: 'Canais de notificação',
       items: [
         {
-          key: 'pushEnabled' as const,
+          key: 'pushEnabled',
           icon: Bell,
-          label: 'Notificações push',
-          description: 'Receba alertas no aplicativo',
+          label: 'Notificações no navegador',
+          description: 'Receba lembretes nativos do navegador',
         },
         {
-          key: 'emailEnabled' as const,
+          key: 'soundEnabled',
+          icon: Bell,
+          label: 'Som',
+          description: 'Toca um bipe ao notificar',
+        },
+        {
+          key: 'vibrationEnabled',
+          icon: Bell,
+          label: 'Vibração',
+          description: 'Vibra em dispositivos móveis compatíveis',
+        },
+        {
+          key: 'emailEnabled',
           icon: Mail,
           label: 'E-mail',
           description: 'Receba resumos por e-mail',
+          badge: 'Em breve',
         },
       ],
     },
@@ -221,7 +406,30 @@ export function NotificationPreferencesEditor({
     setIsSaving(true);
     try {
       const payload = stateToPayload(notifications, reminderStyle);
-      await patchNotifications(payload);
+      const updated: NotificationPreferencesDto = await patchNotifications(payload);
+      setNotificationPrefs(updated);
+
+      if (notifications.pushEnabled) {
+        let perm = permission;
+        if (perm === 'default') {
+          perm = await requestNotificationPermission();
+          setPermission(perm);
+        }
+        if (perm === 'granted' && isWebPushSupported()) {
+          try {
+            await subscribeToPush();
+          } catch {
+            // não bloqueia o save
+          }
+        }
+      } else if (isWebPushSupported()) {
+        try {
+          await unsubscribeFromPush();
+        } catch {
+          // ignora
+        }
+      }
+
       setSaveMessage('Preferências salvas.');
       if (variant === 'modal') {
         onModalSaved?.();
@@ -235,6 +443,15 @@ export function NotificationPreferencesEditor({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const bannerToneClass: Record<'success' | 'warning' | 'destructive' | 'info', string> = {
+    success:
+      'border-green-500/40 bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-200',
+    warning:
+      'border-amber-500/40 bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200',
+    destructive: 'border-destructive/40 bg-destructive/10 text-destructive',
+    info: 'border-blue-500/40 bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-200',
   };
 
   const body = (
@@ -251,6 +468,51 @@ export function NotificationPreferencesEditor({
         <p className="text-sm text-muted-foreground mb-4">Carregando preferências…</p>
       )}
 
+      {permissionBanner && (
+        <div
+          className={`mb-5 flex items-start gap-3 rounded-2xl border px-3 py-3 text-sm ${bannerToneClass[permissionBanner.tone]}`}
+        >
+          <div className="mt-0.5 shrink-0">
+            {permissionBanner.tone === 'success' ? (
+              <Bell className="w-4 h-4" />
+            ) : (
+              <BellOff className="w-4 h-4" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0 space-y-2">
+            <p className="leading-snug">{permissionBanner.text}</p>
+            <div className="flex flex-wrap gap-2">
+              {permissionBanner.action === 'request' && (
+                <button
+                  type="button"
+                  onClick={() => void handleRequestPermission()}
+                  className="inline-flex items-center rounded-full border border-current/30 px-3 py-1 text-xs font-semibold btn-apple"
+                >
+                  Permitir notificações
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={permission === 'unsupported'}
+                onClick={() => void handleSendTest()}
+                className="inline-flex items-center rounded-full border border-current/30 px-3 py-1 text-xs font-semibold btn-apple disabled:opacity-40"
+              >
+                Enviar teste
+              </button>
+            </div>
+            {permissionMessage && (
+              <p className="text-xs opacity-80">{permissionMessage}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isNotificationApiSupported() && notifications.pushEnabled && (
+        <p className="mb-4 text-xs text-muted-foreground">
+          As notificações são entregues somente enquanto a Kiki está aberta no navegador.
+        </p>
+      )}
+
       <div className="space-y-6">
         {notificationChannels.map((section, sectionIndex) => (
           <div key={sectionIndex}>
@@ -258,38 +520,48 @@ export function NotificationPreferencesEditor({
               {section.title}
             </h3>
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
-              {section.items.map((item, itemIndex) => (
-                <div
-                  key={item.key}
-                  className={`flex items-center gap-3 p-4 ${
-                    itemIndex !== section.items.length - 1 ? 'border-b border-border' : ''
-                  }`}
-                >
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
-                    <item.icon className="w-5 h-5 text-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{item.label}</p>
-                    <p className="text-xs text-muted-foreground">{item.description}</p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isLoading}
-                    onClick={() => toggleNotification(item.key)}
-                    className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${
-                      notifications[item.key]
-                        ? `bg-gradient-to-br ${themeColor}`
-                        : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
+              {section.items.map((item, itemIndex) => {
+                const disabled = isLoading || item.badge === 'Em breve';
+                return (
+                  <div
+                    key={item.key}
+                    className={`flex items-center gap-3 p-4 ${
+                      itemIndex !== section.items.length - 1 ? 'border-b border-border' : ''
+                    } ${item.badge === 'Em breve' ? 'opacity-60' : ''}`}
                   >
-                    <div
-                      className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
-                        notifications[item.key] ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-              ))}
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
+                      <item.icon className="w-5 h-5 text-foreground" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">{item.label}</p>
+                        {item.badge && (
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            {item.badge}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{item.description}</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => toggleNotification(item.key)}
+                      className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${
+                        notifications[item.key]
+                          ? `bg-gradient-to-br ${themeColor}`
+                          : 'bg-gray-300 dark:bg-gray-600'
+                      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <div
+                        className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
+                          notifications[item.key] ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}

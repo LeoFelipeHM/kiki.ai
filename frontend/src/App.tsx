@@ -4,9 +4,16 @@ import { ThemeProvider } from './components/ThemeProvider';
 import type { CalendarEvent } from './types/calendar';
 import { AuthSessionExpiredError, initializeAuthSession, login, logout } from './services/auth';
 import { fetchCalendarEvents } from './services/calendar';
-import { fetchSettings } from './services/settings';
+import { fetchSettings, type NotificationPreferencesDto } from './services/settings';
 import { seedHomeCalendarRange } from './lib/calendarUtils';
 import type { AppShellContextValue, ProfileDataState, ThemeAppearance } from './context/AppShellContext';
+import { useNotificationScheduler } from './hooks/useNotificationScheduler';
+import {
+  ensureServiceWorkerRegistered,
+  isWebPushSupported,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from './lib/pushSubscription';
 import { ROUTES } from './root.paths';
 import { RootRoutes } from './root';
 
@@ -29,20 +36,31 @@ function AppRoutes() {
   });
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [notificationPrefs, setNotificationPrefs] =
+    useState<NotificationPreferencesDto | null>(null);
 
   const handleLogout = useCallback(async () => {
+    if (isWebPushSupported()) {
+      try {
+        await unsubscribeFromPush();
+      } catch {
+        // ignora — logout não pode quebrar
+      }
+    }
     await logout();
     setIsAuthenticated(false);
     setCurrentUserId('');
     setUserRole('user');
     setIsMenuOpen(false);
     setEvents([]);
+    setNotificationPrefs(null);
     navigate(ROUTES.login, { replace: true });
   }, [navigate]);
 
   const handleSessionExpired = useCallback(() => {
     setIsAuthenticated(false);
     setEvents([]);
+    setNotificationPrefs(null);
     navigate(ROUTES.login, { replace: true });
   }, [navigate]);
 
@@ -101,12 +119,14 @@ function AppRoutes() {
   useEffect(() => {
     if (!isAuthenticated) {
       setAppearance('light');
+      setNotificationPrefs(null);
       return;
     }
     void (async () => {
       try {
         const s = await fetchSettings();
         setAppearance(s.ui.theme_mode);
+        setNotificationPrefs(s.notifications);
       } catch (e) {
         if (e instanceof AuthSessionExpiredError) {
           handleSessionExpired();
@@ -114,6 +134,51 @@ function AppRoutes() {
       }
     })();
   }, [isAuthenticated, handleSessionExpired]);
+
+  const navigateToCalendar = useCallback(() => {
+    navigate(ROUTES.calendar);
+  }, [navigate]);
+  const navigateToHome = useCallback(() => {
+    navigate(ROUTES.home);
+  }, [navigate]);
+
+  useNotificationScheduler({
+    enabled: isAuthenticated,
+    events,
+    prefs: notificationPrefs,
+    onMeetingClick: navigateToCalendar,
+    onTaskClick: navigateToCalendar,
+    onSummaryClick: navigateToHome,
+  });
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (!isWebPushSupported()) return;
+    void ensureServiceWorkerRegistered().catch(() => undefined);
+    if (!notificationPrefs?.push_enabled) return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    void subscribeToPush().catch(() => undefined);
+  }, [isAuthenticated, notificationPrefs?.push_enabled]);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; url?: string } | undefined;
+      if (!data) return;
+      if (data.type === 'kiki:notification-click' && typeof data.url === 'string') {
+        try {
+          navigate(data.url);
+        } catch {
+          // ignora rotas inválidas
+        }
+      }
+      if (data.type === 'kiki:push-subscription-change') {
+        void subscribeToPush().catch(() => undefined);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [navigate]);
 
   const shellValue = useMemo(
     (): AppShellContextValue => ({
@@ -130,6 +195,8 @@ function AppRoutes() {
       openMenu: () => setIsMenuOpen(true),
       onLogout: handleLogout,
       onSessionExpired: handleSessionExpired,
+      notificationPrefs,
+      setNotificationPrefs,
     }),
     [
       profileData,
@@ -140,6 +207,7 @@ function AppRoutes() {
       userRole,
       handleLogout,
       handleSessionExpired,
+      notificationPrefs,
     ],
   );
 

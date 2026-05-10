@@ -10,11 +10,13 @@ from application.admin_service import AdminService
 from application.auth_service import AuthService
 from application.calendar_service import CalendarService
 from application.notes_service import NotesService
+from application.push_service import PushService
 from application.settings_service import SettingsService
 from application.errors import InvalidAccessTokenError
 from infrastructure.config import Settings, load_settings
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
+from infrastructure.persistence.postgres_push_repository import PostgresPushRepository
 from infrastructure.persistence.postgres_settings_repository import PostgresSettingsRepository
 from infrastructure.persistence.postgres_refresh_token_repository import PostgresRefreshTokenRepository
 from infrastructure.persistence.postgres_user_repository import PostgresUserRepository
@@ -29,6 +31,9 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 def get_settings() -> Settings:
     return settings
+
+
+SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
 def get_db_connection() -> Generator[psycopg.Connection[Any], None, None]:
@@ -72,6 +77,10 @@ def get_notes_service(conn: DbConnDep) -> NotesService:
 
 def get_settings_service(conn: DbConnDep) -> SettingsService:
     return SettingsService(conn, PostgresSettingsRepository(conn))
+
+
+def get_push_service(conn: DbConnDep) -> PushService:
+    return PushService(conn, settings, PostgresPushRepository(conn))
 
 
 def get_current_user(

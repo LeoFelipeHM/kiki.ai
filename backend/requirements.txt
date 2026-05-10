@@ -9,4 +9,5 @@ google-genai==1.75.0
 livekit-agents[silero,assemblyai,azure,openai]==1.5.8
 openai>=2.0,<3
 python-dotenv==1.2.2
+pywebpush==2.0.3
 

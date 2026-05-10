@@ -1,8 +1,11 @@
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from application.notification_dispatcher import NotificationDispatcher
+from infrastructure.config import load_settings
 from presentation.api.routers import (
     admin,
     auth,
@@ -10,6 +13,7 @@ from presentation.api.routers import (
     chat,
     health,
     notes,
+    push,
     settings,
     voice_livekit,
 )
@@ -69,7 +73,20 @@ def _cors_origin_regex() -> str | None:
     return r"^http://20\.15\.165\.251(:\d+)?$"
 
 
-app = FastAPI(title="kiki-backend")
+_app_settings = load_settings()
+_notification_dispatcher = NotificationDispatcher(_app_settings)
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    _notification_dispatcher.start()
+    try:
+        yield
+    finally:
+        await _notification_dispatcher.stop()
+
+
+app = FastAPI(title="kiki-backend", lifespan=_lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -88,3 +105,4 @@ app.include_router(notes.router)
 app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(voice_livekit.router)
+app.include_router(push.router)

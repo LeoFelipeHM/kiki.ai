@@ -12,6 +12,10 @@ class Settings:
     refresh_token_expire_days: int
     max_failed_login_attempts: int
     lockout_minutes: int
+    vapid_public_key: str
+    vapid_private_key: str
+    vapid_subject: str
+    push_dispatch_interval_seconds: int
 
 
 def load_settings() -> Settings:
@@ -24,4 +28,8 @@ def load_settings() -> Settings:
         refresh_token_expire_days=int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30")),
         max_failed_login_attempts=int(os.getenv("MAX_FAILED_LOGIN_ATTEMPTS", "5")),
         lockout_minutes=int(os.getenv("LOCKOUT_MINUTES", "15")),
+        vapid_public_key=os.getenv("VAPID_PUBLIC_KEY", "").strip(),
+        vapid_private_key=os.getenv("VAPID_PRIVATE_KEY", "").strip(),
+        vapid_subject=os.getenv("VAPID_SUBJECT", "mailto:contato@heykiki.com.br").strip(),
+        push_dispatch_interval_seconds=int(os.getenv("PUSH_DISPATCH_INTERVAL_SECONDS", "30")),
     )

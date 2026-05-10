@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { CalendarEvent } from '@/types/calendar';
+import type { NotificationPreferencesDto } from '@/services/settings';
 
 export type ProfileDataState = {
   name: string;
@@ -26,6 +27,10 @@ export type AppShellContextValue = {
   openMenu: () => void;
   onLogout: () => Promise<void>;
   onSessionExpired: () => void;
+  notificationPrefs: NotificationPreferencesDto | null;
+  setNotificationPrefs: React.Dispatch<
+    React.SetStateAction<NotificationPreferencesDto | null>
+  >;
 };
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
