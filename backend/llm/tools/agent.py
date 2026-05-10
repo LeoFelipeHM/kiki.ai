@@ -68,6 +68,7 @@ def run_tool_agent(
     current_user_timezone: str | None,
     calendar_service: Any,
     notes_service: Any,
+    contacts_service: Any = None,
     api_key: str | None = None,
     model: str | None = None,
     additional_system_context: str | None = None,
@@ -137,6 +138,7 @@ def run_tool_agent(
                         current_user_timezone=current_user_timezone,
                         calendar_service=calendar_service,
                         notes_service=notes_service,
+                        contacts_service=contacts_service,
                     )
                     outputs.append(
                         {
@@ -169,6 +171,7 @@ def run_tool_agent_stream(
     current_user_timezone: str | None,
     calendar_service: Any,
     notes_service: Any,
+    contacts_service: Any = None,
     api_key: str | None = None,
     model: str | None = None,
     additional_system_context: str | None = None,
@@ -179,6 +182,7 @@ def run_tool_agent_stream(
         current_user_timezone=current_user_timezone,
         calendar_service=calendar_service,
         notes_service=notes_service,
+        contacts_service=contacts_service,
         api_key=api_key,
         model=model,
         additional_system_context=additional_system_context,

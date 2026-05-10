@@ -11,6 +11,10 @@ ToolName = Literal[
     "notes_create_note",
     "notes_update_note",
     "notes_delete_note",
+    "contacts_list_contacts",
+    "contacts_create_contact",
+    "contacts_update_contact",
+    "contacts_delete_contact",
 ]
 
 
@@ -194,6 +198,65 @@ def tools_schema() -> list[dict[str, Any]]:
                     "type": "object",
                     "properties": {"note_id": {"type": "string"}},
                     "required": ["note_id"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "contacts_list_contacts",
+                "description": "Lista os contatos do usuário (nome e e-mail). Use para encontrar um contato existente antes de criar/atualizar/excluir, ou ao adicionar convidados a um evento do calendário.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "contacts_create_contact",
+                "description": "Cria um contato (nome + e-mail) para o usuário. O e-mail deve ser único por usuário; em caso de duplicidade, o sistema retorna erro de e-mail já cadastrado.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Nome do contato. Não pode ser vazio."},
+                        "email": {"type": "string", "description": "E-mail válido do contato."},
+                    },
+                    "required": ["name", "email"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "contacts_update_contact",
+                "description": "Atualiza nome e/ou e-mail de um contato existente. Use o contact_id retornado por contacts_list_contacts.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "contact_id": {"type": "string"},
+                        "name": {"type": ["string", "null"]},
+                        "email": {"type": ["string", "null"]},
+                    },
+                    "required": ["contact_id"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "contacts_delete_contact",
+                "description": "Exclui um contato do usuário. Confirme com o usuário antes de chamar.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"contact_id": {"type": "string"}},
+                    "required": ["contact_id"],
                     "additionalProperties": False,
                 },
             },

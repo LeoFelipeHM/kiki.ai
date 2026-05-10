@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from zoneinfo import ZoneInfo
 
+from application.contacts_service import DuplicateContactEmailError
 from domain.calendar import RecurrenceValidationError, ScheduleConflictError
 
 from llm.tools.schemas import ToolName
@@ -73,6 +74,7 @@ def execute_tool_call(
     current_user_timezone: str | None,
     calendar_service: Any,
     notes_service: Any,
+    contacts_service: Any = None,
 ) -> dict[str, Any]:
     """Executa uma tool e retorna um payload JSON serializável para devolver ao modelo."""
     try:
@@ -348,6 +350,80 @@ def execute_tool_call(
             if not ok:
                 return _tool_error("Nota não encontrada.")
             return _tool_ok({"deleted": True})
+
+        if name in (
+            "contacts_list_contacts",
+            "contacts_create_contact",
+            "contacts_update_contact",
+            "contacts_delete_contact",
+        ):
+            if contacts_service is None:
+                return _tool_error("Serviço de contatos indisponível nesta sessão.")
+
+            if name == "contacts_list_contacts":
+                rows = contacts_service.list_contacts(current_user_id)
+                return _tool_ok(rows)
+
+            if name == "contacts_create_contact":
+                name_in = str(arguments.get("name") or "").strip()
+                email_in = str(arguments.get("email") or "").strip()
+                if not name_in:
+                    return _tool_error("Informe o nome do contato.")
+                if not email_in:
+                    return _tool_error("Informe o e-mail do contato.")
+                try:
+                    row = contacts_service.create_contact(
+                        current_user_id,
+                        name=name_in,
+                        email=email_in,
+                    )
+                except DuplicateContactEmailError as exc:
+                    return _tool_error(str(exc))
+                except ValueError as exc:
+                    return _tool_error(str(exc))
+                return _tool_ok(row)
+
+            if name == "contacts_update_contact":
+                contact_id = str(arguments.get("contact_id") or "").strip()
+                if not contact_id:
+                    return _tool_error("contact_id é obrigatório.")
+                name_raw = arguments.get("name")
+                email_raw = arguments.get("email")
+                name_in = (
+                    str(name_raw).strip()
+                    if name_raw is not None and str(name_raw).strip()
+                    else None
+                )
+                email_in = (
+                    str(email_raw).strip()
+                    if email_raw is not None and str(email_raw).strip()
+                    else None
+                )
+                if name_in is None and email_in is None:
+                    return _tool_error("Informe nome e/ou e-mail para atualizar.")
+                try:
+                    row = contacts_service.update_contact(
+                        current_user_id,
+                        contact_id,
+                        name=name_in,
+                        email=email_in,
+                    )
+                except DuplicateContactEmailError as exc:
+                    return _tool_error(str(exc))
+                except ValueError as exc:
+                    return _tool_error(str(exc))
+                if not row:
+                    return _tool_error("Contato não encontrado.")
+                return _tool_ok(row)
+
+            if name == "contacts_delete_contact":
+                contact_id = str(arguments.get("contact_id") or "").strip()
+                if not contact_id:
+                    return _tool_error("contact_id é obrigatório.")
+                ok = contacts_service.delete_contact(current_user_id, contact_id)
+                if not ok:
+                    return _tool_error("Contato não encontrado.")
+                return _tool_ok({"deleted": True})
 
         return _tool_error("Ferramenta desconhecida.")
     except Exception as exc:

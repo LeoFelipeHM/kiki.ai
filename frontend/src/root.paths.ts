@@ -8,6 +8,7 @@ export const ROUTES = {
   chat: '/chat',
   calendar: '/calendar',
   notes: '/notes',
+  contacts: '/contacts',
   settings: '/settings',
   profile: '/profile',
   profilePhoto: '/profile/foto',

@@ -10,6 +10,7 @@ import { HomePage } from './pages/HomePage';
 import { ChatPage } from './pages/ChatPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { NotesPage } from './pages/NotesPage';
+import { ContactsPage } from './pages/ContactsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { EditProfileFieldPage } from './pages/EditProfileFieldPage';
 import { EditProfilePhotoPage } from './pages/EditProfilePhotoPage';
@@ -33,6 +34,7 @@ export const PAGE_REGISTRY = [
   { path: ROUTES.chat, title: 'Chat com Kiki' },
   { path: ROUTES.calendar, title: 'Calendário' },
   { path: ROUTES.notes, title: 'Notas' },
+  { path: ROUTES.contacts, title: 'Contatos' },
   { path: ROUTES.settings, title: 'Configurações' },
   { path: ROUTES.profile, title: 'Perfil' },
   { path: ROUTES.profilePhoto, title: 'Foto do perfil' },
@@ -134,6 +136,7 @@ export function RootRoutes({
         <Route path={ROUTES.chat} element={<ChatPage />} />
         <Route path={ROUTES.calendar} element={<CalendarPage />} />
         <Route path={ROUTES.notes} element={<NotesPage />} />
+        <Route path={ROUTES.contacts} element={<ContactsPage />} />
         <Route path={ROUTES.settings} element={<SettingsPage />} />
         <Route path={ROUTES.profile} element={<ProfilePage />} />
         <Route path={ROUTES.profilePhoto} element={<EditProfilePhotoPage />} />

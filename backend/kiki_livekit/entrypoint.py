@@ -14,8 +14,10 @@ from psycopg.rows import dict_row
 
 from application.azure_voice_ids import AZURE_PT_BR_VOICE_IDS_FROZEN
 from application.calendar_service import CalendarService
+from application.contacts_service import ContactsService
 from application.notes_service import NotesService
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
+from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
 from llm.openai_chat_client import generate_reply_with_tools
 from .llm import build_llm
@@ -99,15 +101,21 @@ Responda em português do Brasil, em frases curtas e naturais para conversa fala
 Não use markdown, listas numeradas, emojis ou símbolos estranhos.
 Seja cordial, objetiva e útil.
 
-Você tem acesso ao calendário e às notas do usuário autenticado do app Kiki por meio de ferramentas internas.
-Não invente compromissos nem horários; consulte quando precisar.
+Você tem acesso ao calendário, às notas e aos contatos do usuário autenticado do app Kiki por meio de ferramentas internas.
+Não invente compromissos, horários, contatos nem e-mails; consulte quando precisar.
 
-Para fatos públicos ou atualizados (notícias, clima, preços), você pode usar busca na web; para agenda e notas do usuário, use sempre as ferramentas internas.
+Para fatos públicos ou atualizados (notícias, clima, preços), você pode usar busca na web; para agenda, notas e contatos do usuário, use sempre as ferramentas internas.
 Quando a resposta vier da web, fale só o conteúdo verificado em palavras — nunca leia links, URLs ou nomes de sites em voz alta.
 
 Notas (importante):
 - Você pode criar, editar e excluir notas quando o usuário pedir.
 - Se faltar informação (ex.: título, conteúdo, qual nota alterar), faça uma pergunta curta para completar antes de executar.
+
+Contatos (importante):
+- Você pode criar, editar e excluir contatos quando o usuário pedir.
+- Contato exige nome e e-mail. Se o usuário não der o e-mail, pergunte antes de criar.
+- Soletre e-mails com calma quando precisar confirmar com o usuário, mas nunca leia "arroba", "ponto" como símbolos: prefira ditar de forma natural, por exemplo "joana ponto silva arroba gmail ponto com".
+- Antes de excluir, confirme com o usuário.
 
 Formatação para fala (muito importante):
 - Nunca leia datas/horas em formato técnico com barras ou hífens (ex.: "09/09/12", "2026-05-09", "09:30").
@@ -190,12 +198,14 @@ Formatação para fala (muito importante):
                 NotesService(conn, PostgresNotesRepository(conn)),
                 self,
             )
+            contacts_service = ContactsService(conn, PostgresContactsRepository(conn))
             reply = generate_reply_with_tools(
                 pairs,
                 current_user_id=self._user_id,
                 current_user_timezone=self._user_timezone,
                 calendar_service=calendar_service,
                 notes_service=notes_service,
+                contacts_service=contacts_service,
                 additional_system_context=self.voice_session_context(),
             )
 

@@ -1,5 +1,6 @@
 import {
   Activity,
+  BookUser,
   Calendar,
   MessageCircle,
   X,
@@ -20,6 +21,7 @@ type MenuScreen =
   | 'profile'
   | 'settings'
   | 'notes'
+  | 'contacts'
   | 'admin-users'
   | 'admin-usage';
 
@@ -27,6 +29,7 @@ const MENU_PATHS: Record<MenuScreen, string> = {
   home: ROUTES.home,
   calendar: ROUTES.calendar,
   notes: ROUTES.notes,
+  contacts: ROUTES.contacts,
   chat: ROUTES.chat,
   profile: ROUTES.profile,
   settings: ROUTES.settings,
@@ -58,6 +61,7 @@ export function SideMenu({
     { id: 'chat', icon: MessageCircle, label: 'Chat com Kiki', description: 'Converse com sua assistente' },
     { id: 'calendar', icon: Calendar, label: 'Calendário', description: 'Visualize sua agenda' },
     { id: 'notes', icon: FileText, label: 'Notas', description: 'Suas anotações' },
+    { id: 'contacts', icon: BookUser, label: 'Contatos', description: 'Nome e e-mail' },
     ...(isAdmin
       ? [
           { id: 'admin-users' as const, icon: Users, label: 'Usuários', description: 'Administrar contas' },

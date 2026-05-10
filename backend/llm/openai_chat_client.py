@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 from collections.abc import Iterator
 from typing import Any
@@ -25,6 +26,32 @@ def _client(api_key: str | None) -> OpenAI:
     if not key:
         raise OpenAIChatConfigurationError("OPENAI_API_KEY não configurada.")
     return OpenAI(api_key=key)
+
+
+def transcribe_whisper_audio(
+    audio_bytes: bytes,
+    *,
+    filename: str = "audio.webm",
+    api_key: str | None = None,
+) -> str:
+    """Transcreve áudio curto via Whisper (chat por voz sem chamada)."""
+    bio = io.BytesIO(audio_bytes)
+    bio.name = filename
+    client = _client(api_key)
+    try:
+        tr = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=bio,
+            language="pt",
+        )
+    except (APIConnectionError, APIStatusError, RateLimitError) as exc:
+        raise OpenAIChatCompletionError(str(exc)) from exc
+    except Exception as exc:
+        raise OpenAIChatCompletionError(str(exc)) from exc
+    text = (getattr(tr, "text", None) or "").strip()
+    if not text:
+        raise OpenAIChatCompletionError("Não foi possível reconhecer fala no áudio.")
+    return text
 def generate_reply_with_tools(
     messages: list[tuple[str, str]],
     *,
@@ -32,11 +59,12 @@ def generate_reply_with_tools(
     current_user_timezone: str | None,
     calendar_service: Any,
     notes_service: Any,
+    contacts_service: Any = None,
     api_key: str | None = None,
     model: str | None = None,
     additional_system_context: str | None = None,
 ) -> str:
-    """Próxima mensagem do assistente (OpenAI Responses API) com web_search + tool-calling para calendário/notas."""
+    """Próxima mensagem do assistente (OpenAI Responses API) com web_search + tool-calling para calendário/notas/contatos."""
     try:
         return run_tool_agent(
             messages,
@@ -44,6 +72,7 @@ def generate_reply_with_tools(
             current_user_timezone=current_user_timezone,
             calendar_service=calendar_service,
             notes_service=notes_service,
+            contacts_service=contacts_service,
             api_key=api_key,
             model=model,
             additional_system_context=additional_system_context,
@@ -59,6 +88,7 @@ def generate_reply_stream_with_tools(
     current_user_timezone: str | None,
     calendar_service: Any,
     notes_service: Any,
+    contacts_service: Any = None,
     api_key: str | None = None,
     model: str | None = None,
     additional_system_context: str | None = None,
@@ -71,6 +101,7 @@ def generate_reply_stream_with_tools(
             current_user_timezone=current_user_timezone,
             calendar_service=calendar_service,
             notes_service=notes_service,
+            contacts_service=contacts_service,
             api_key=api_key,
             model=model,
             additional_system_context=additional_system_context,

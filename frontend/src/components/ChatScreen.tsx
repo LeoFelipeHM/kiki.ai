@@ -1,8 +1,9 @@
-import { Send, Sparkles, Calendar, Clock, CheckCircle2, ListTodo, Mic, MicOff, Menu, X, Phone } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { Send, Sparkles, Calendar, Clock, CheckCircle2, ListTodo, Mic, MicOff, Menu, X, Phone, Square } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLiveKitVoiceRoom } from '@/hooks/useLiveKitVoiceRoom';
 import { voiceCenterPrimary, voiceCenterSecondary, voiceOverlayCaption } from '@/lib/voiceUiCaptions';
 import { streamChat, type ChatApiMessage } from '@/services/chat';
+import { transcribeChatAudio } from '@/services/transcription';
 
 interface Message {
   id: number;
@@ -24,6 +25,8 @@ interface ChatScreenProps {
 const WELCOME_MESSAGE_FULL =
   'Olá! Sou a Kiki, sua assistente pessoal. Como posso ajudar você hoje?';
 
+const MAX_RECORDING_MS = 120_000;
+
 export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, userName = 'Maria Silva' }: ChatScreenProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -33,11 +36,21 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
       timestamp: new Date(),
     },
   ]);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const [inputValue, setInputValue] = useState('');
   const [isVoiceCallActive, setIsVoiceCallActive] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const voice = useLiveKitVoiceRoom();
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<BlobPart[]>([]);
+  const recordingMimeRef = useRef<string>('audio/webm');
+  const maxRecordingTimerRef = useRef<number | null>(null);
+  const stopRecordingRef = useRef<() => Promise<void>>(async () => {});
   const voiceDisconnectRef = useRef(voice.disconnect);
   voiceDisconnectRef.current = voice.disconnect;
 
@@ -90,80 +103,194 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     { icon: CheckCircle2, label: 'Planejar semana', color: 'bg-pink-100 text-pink-600' },
   ];
 
+  const clearMaxRecordingTimer = useCallback(() => {
+    if (maxRecordingTimerRef.current != null) {
+      window.clearTimeout(maxRecordingTimerRef.current);
+      maxRecordingTimerRef.current = null;
+    }
+  }, []);
+
+  const sendMessageWithText = useCallback(
+    async (text: string, isUserAudio: boolean) => {
+      const trimmed = text.trim();
+      if (!trimmed || isSending) return;
+
+      const base = messagesRef.current;
+      const userMessage: Message = {
+        id: nextMessageId(base),
+        text: trimmed,
+        sender: 'user',
+        timestamp: new Date(),
+        isUserAudio,
+      };
+
+      const transcript = [...base, userMessage];
+      const apiMessages = messagesToApiPayload(transcript);
+
+      setMessages(transcript);
+      setSendError(null);
+      setIsSending(true);
+
+      const kikiId = nextMessageId(transcript);
+
+      setMessages([
+        ...transcript,
+        {
+          id: kikiId,
+          text: '',
+          sender: 'kiki',
+          timestamp: new Date(),
+          streamingPhase: 'thinking',
+        },
+      ]);
+
+      let sawDelta = false;
+
+      await streamChat(apiMessages, {
+        onDelta: (delta) => {
+          if (!sawDelta) sawDelta = true;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === kikiId
+                ? {
+                    ...m,
+                    text: (m.text ?? '') + delta,
+                    streamingPhase: 'typing' as const,
+                  }
+                : m,
+            ),
+          );
+        },
+        onDone: (interrupted) => {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== kikiId) return m;
+              const finalText = m.text.trim() || '(Sem texto na resposta.)';
+              return { ...m, text: finalText, streamingPhase: undefined };
+            }),
+          );
+          if (interrupted) {
+            setSendError('Conexão instável: a resposta pode estar incompleta. Envie de novo se precisar.');
+          }
+          setIsSending(false);
+        },
+        onError: (msg) => {
+          setMessages((prev) => prev.filter((m) => m.id !== kikiId));
+          const fallback = 'Não foi possível obter resposta da Kiki.';
+          if (msg.includes('sessão') || msg.includes('login')) {
+            setSendError(msg);
+          } else {
+            setSendError(msg || fallback);
+          }
+          setIsSending(false);
+        },
+      });
+    },
+    [isSending],
+  );
+
   const handleSend = async () => {
     const text = inputValue.trim();
     if (!text || isSending) return;
-
-    const userMessage: Message = {
-      id: nextMessageId(messages),
-      text,
-      sender: 'user',
-      timestamp: new Date(),
-      isUserAudio: false,
-    };
-
-    const transcript = [...messages, userMessage];
-    const apiMessages = messagesToApiPayload(transcript);
-
     setInputValue('');
-    setMessages(transcript);
-    setSendError(null);
-    setIsSending(true);
+    await sendMessageWithText(text, false);
+  };
 
-    const kikiId = nextMessageId(transcript);
+  const stopRecordingAndTranscribe = useCallback(async () => {
+    const mr = mediaRecorderRef.current;
+    const stream = mediaStreamRef.current;
+    const mime = recordingMimeRef.current || 'audio/webm';
 
-    setMessages([
-      ...transcript,
-      {
-        id: kikiId,
-        text: '',
-        sender: 'kiki',
-        timestamp: new Date(),
-        streamingPhase: 'thinking',
-      },
-    ]);
+    if (!mr || mr.state === 'inactive') {
+      setIsRecording(false);
+      clearMaxRecordingTimer();
+      return;
+    }
 
-    let sawDelta = false;
-
-    await streamChat(apiMessages, {
-      onDelta: (delta) => {
-        if (!sawDelta) sawDelta = true;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === kikiId
-              ? {
-                  ...m,
-                  text: (m.text ?? '') + delta,
-                  streamingPhase: 'typing' as const,
-                }
-              : m,
-          ),
-        );
-      },
-      onDone: (interrupted) => {
-        setMessages((prev) =>
-          prev.map((m) => {
-            if (m.id !== kikiId) return m;
-            const finalText = m.text.trim() || '(Sem texto na resposta.)';
-            return { ...m, text: finalText, streamingPhase: undefined };
-          }),
-        );
-        if (interrupted) {
-          setSendError('Conexão instável: a resposta pode estar incompleta. Envie de novo se precisar.');
+    const blobPromise = new Promise<Blob>((resolve, reject) => {
+      mr.onstop = () => {
+        try {
+          const blob = new Blob(recordingChunksRef.current, { type: mime });
+          resolve(blob);
+        } catch (e) {
+          reject(e);
         }
-        setIsSending(false);
-      },
-      onError: (msg) => {
-        setMessages((prev) => prev.filter((m) => m.id !== kikiId));
-        const fallback = 'Não foi possível obter resposta da Kiki.';
-        if (msg.includes('sessão') || msg.includes('login')) {
-          setSendError(msg);
-        } else {
-          setSendError(msg || fallback);
-        }
-        setIsSending(false);
-      },
+      };
+      mr.stop();
+      stream?.getTracks().forEach((t) => t.stop());
     });
+
+    clearMaxRecordingTimer();
+    setIsRecording(false);
+    mediaRecorderRef.current = null;
+    mediaStreamRef.current = null;
+
+    try {
+      const blob = await blobPromise;
+      if (blob.size < 256) {
+        setSendError('Gravação muito curta.');
+        return;
+      }
+      setIsTranscribing(true);
+      setSendError(null);
+      const text = await transcribeChatAudio(blob);
+      await sendMessageWithText(text, true);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Não foi possível transcrever.';
+      setSendError(msg);
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, [clearMaxRecordingTimer, sendMessageWithText]);
+
+  stopRecordingRef.current = stopRecordingAndTranscribe;
+
+  const startRecording = useCallback(async () => {
+    if (isSending || isTranscribing || isRecording) return;
+    setSendError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : '';
+      recordingMimeRef.current = mime || 'audio/webm';
+      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      recordingChunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) recordingChunksRef.current.push(e.data);
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      clearMaxRecordingTimer();
+      maxRecordingTimerRef.current = window.setTimeout(() => {
+        void stopRecordingRef.current();
+      }, MAX_RECORDING_MS);
+      setIsRecording(true);
+    } catch {
+      setSendError('Permita o uso do microfone para gravar.');
+    }
+  }, [clearMaxRecordingTimer, isSending, isTranscribing, isRecording]);
+
+  useEffect(() => {
+    return () => {
+      clearMaxRecordingTimer();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, [clearMaxRecordingTimer]);
+
+  const handleComposerMic = () => {
+    if (isSending || isTranscribing) return;
+    if (isRecording) {
+      void stopRecordingAndTranscribe();
+    } else {
+      void startRecording();
+    }
   };
 
   const beginVoiceCall = async () => {
@@ -171,8 +298,6 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     setIsVoiceCallActive(true);
     await voice.connect();
   };
-
-  const handleComposerMic = () => void beginVoiceCall();
 
   const handleStartVoiceCall = () => void beginVoiceCall();
 
@@ -400,6 +525,13 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
             {sendError}
           </p>
         )}
+        {(isRecording || isTranscribing) && (
+          <p className="text-xs text-muted-foreground mb-2">
+            {isTranscribing
+              ? 'Transcrevendo…'
+              : 'Gravando… toque no microfone de novo para enviar'}
+          </p>
+        )}
         {showQuickSuggestions && (
           <div className="mb-3">
             <p className="text-xs text-muted-foreground mb-2">Sugestões rápidas</p>
@@ -432,13 +564,19 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
                   void handleSend();
                 }
               }}
-              placeholder={isSending ? 'Enviando...' : 'Digite sua mensagem...'}
-              disabled={isSending}
+              placeholder={
+                isTranscribing
+                  ? 'Transcrevendo…'
+                  : isSending
+                    ? 'Enviando...'
+                    : 'Digite sua mensagem...'
+              }
+              disabled={isSending || isTranscribing}
               className="flex-1 bg-transparent px-3 py-1.5 text-sm outline-none disabled:opacity-50"
             />
             <button
               onClick={() => void handleSend()}
-              disabled={!inputValue.trim() || isSending}
+              disabled={!inputValue.trim() || isSending || isTranscribing}
               className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white btn-apple-gradient disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="w-4 h-4" />
@@ -448,17 +586,29 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
           <button
             type="button"
             onClick={handleComposerMic}
-            disabled={isSending}
-            title="Chamada de voz com a Kiki"
-            className="w-12 h-12 rounded-full flex items-center justify-center text-white bg-muted hover:bg-muted/80 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={isSending || isTranscribing}
+            title={
+              isRecording
+                ? 'Parar gravação e enviar (transcrição)'
+                : 'Gravar mensagem de voz (transcreve no chat, sem ligação)'
+            }
+            className={`w-12 h-12 rounded-full flex items-center justify-center text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+              isRecording
+                ? 'bg-red-500 hover:bg-red-600 animate-pulse'
+                : 'bg-muted hover:bg-muted/80'
+            }`}
           >
-            <Mic className="w-5 h-5 text-foreground" />
+            {isRecording ? (
+              <Square className="w-5 h-5 text-white fill-current" />
+            ) : (
+              <Mic className="w-5 h-5 text-foreground" />
+            )}
           </button>
 
           <button
             type="button"
             onClick={handleStartVoiceCall}
-            disabled={isSending}
+            disabled={isSending || isRecording || isTranscribing}
             title="Chamada de voz"
             className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 flex items-center justify-center text-white btn-apple-gradient shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
           >

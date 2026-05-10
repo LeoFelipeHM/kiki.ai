@@ -5,13 +5,15 @@ import threading
 from typing import Annotated, Any
 
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from psycopg.rows import dict_row
 
 from application.calendar_service import CalendarService
+from application.contacts_service import ContactsService
 from application.notes_service import NotesService
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
+from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
 from infrastructure.persistence.postgres_usage_repository import PostgresUsageRepository
 from llm.openai_chat_client import (
@@ -19,20 +21,63 @@ from llm.openai_chat_client import (
     OpenAIChatConfigurationError,
     generate_reply_stream_with_tools,
     generate_reply_with_tools,
+    transcribe_whisper_audio,
 )
 from presentation.api.dependencies import (
     CurrentUserDep,
     DbConnDep,
     get_calendar_service,
+    get_contacts_service,
     get_notes_service,
     settings,
 )
-from presentation.api.schemas.chat import ChatRequest, ChatResponse
+from presentation.api.schemas.chat import ChatRequest, ChatResponse, TranscribeResponse
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+# Limite alinhado ao Whisper (25 MB).
+_MAX_TRANSCRIBE_BYTES = 25 * 1024 * 1024
+
+
+@router.post("/transcribe", response_model=TranscribeResponse)
+def transcribe_chat_audio(
+    _current_user: CurrentUserDep,
+    _conn: DbConnDep,
+    file: UploadFile = File(...),
+):
+    """Áudio gravado no chat → texto (Whisper). Não inicia sessão LiveKit."""
+
+    if not os.getenv("OPENAI_API_KEY", "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OPENAI_API_KEY não configurada.",
+        )
+
+    raw = file.file.read()
+    if len(raw) > _MAX_TRANSCRIBE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Arquivo de áudio muito grande (máx. 25 MB).",
+        )
+    if len(raw) < 256:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Áudio muito curto ou vazio.",
+        )
+
+    name = (file.filename or "audio.webm").strip() or "audio.webm"
+    try:
+        text = transcribe_whisper_audio(raw, filename=name)
+    except OpenAIChatConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except OpenAIChatCompletionError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    return TranscribeResponse(text=text)
+
 CalendarServiceDep = Annotated[CalendarService, Depends(get_calendar_service)]
 NotesServiceDep = Annotated[NotesService, Depends(get_notes_service)]
+ContactsServiceDep = Annotated[ContactsService, Depends(get_contacts_service)]
 
 # Enquanto o agente (tools + LLM) trabalha sem emitir deltas, proxies costumam cortar a conexão (~60s).
 _SSE_KEEPALIVE = float(os.getenv("SSE_KEEPALIVE_SECONDS", "12").strip() or "12")
@@ -70,6 +115,7 @@ def chat_completion_stream(
                 conn = worker_conn[0]
                 calendar_service = CalendarService(conn, PostgresCalendarRepository(conn))
                 notes_service = NotesService(conn, PostgresNotesRepository(conn))
+                contacts_service = ContactsService(conn, PostgresContactsRepository(conn))
 
                 stream = generate_reply_stream_with_tools(
                     pairs,
@@ -77,6 +123,7 @@ def chat_completion_stream(
                     current_user_timezone=str(current_user.get("timezone") or ""),
                     calendar_service=calendar_service,
                     notes_service=notes_service,
+                    contacts_service=contacts_service,
                 )
                 for delta in stream:
                     result_queue.put(("delta", delta))
@@ -154,6 +201,7 @@ def chat_completion(
     conn: DbConnDep,
     calendar_service: CalendarServiceDep,
     notes_service: NotesServiceDep,
+    contacts_service: ContactsServiceDep,
 ):
     if not os.getenv("OPENAI_API_KEY", "").strip():
         raise HTTPException(
@@ -169,6 +217,7 @@ def chat_completion(
             current_user_timezone=str(current_user.get("timezone") or ""),
             calendar_service=calendar_service,
             notes_service=notes_service,
+            contacts_service=contacts_service,
         )
     except OpenAIChatConfigurationError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc

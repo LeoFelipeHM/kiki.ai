@@ -9,12 +9,14 @@ from psycopg.rows import dict_row
 from application.admin_service import AdminService
 from application.auth_service import AuthService
 from application.calendar_service import CalendarService
+from application.contacts_service import ContactsService
 from application.notes_service import NotesService
 from application.push_service import PushService
 from application.settings_service import SettingsService
 from application.errors import InvalidAccessTokenError
 from infrastructure.config import Settings, load_settings
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
+from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
 from infrastructure.persistence.postgres_push_repository import PostgresPushRepository
 from infrastructure.persistence.postgres_settings_repository import PostgresSettingsRepository
@@ -75,6 +77,10 @@ def get_calendar_service(conn: DbConnDep) -> CalendarService:
 
 def get_notes_service(conn: DbConnDep) -> NotesService:
     return NotesService(conn, PostgresNotesRepository(conn))
+
+
+def get_contacts_service(conn: DbConnDep) -> ContactsService:
+    return ContactsService(conn, PostgresContactsRepository(conn))
 
 
 def get_settings_service(conn: DbConnDep) -> SettingsService:
