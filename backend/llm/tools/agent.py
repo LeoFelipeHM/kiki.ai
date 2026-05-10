@@ -70,6 +70,7 @@ def run_tool_agent(
     notes_service: Any,
     api_key: str | None = None,
     model: str | None = None,
+    additional_system_context: str | None = None,
     max_tool_turns: int = DEFAULT_MAX_TOOL_TURNS,
 ) -> str:
     """Responses API: web_search (provedor) + function tools (calendário/notas)."""
@@ -97,7 +98,11 @@ def run_tool_agent(
             kwargs.update(_reasoning_param(mdl))
 
             if previous_response_id is None:
-                kwargs["instructions"] = build_kiki_system_instructions(current_user_timezone)
+                instructions = build_kiki_system_instructions(current_user_timezone)
+                extra_context = (additional_system_context or "").strip()
+                if extra_context:
+                    instructions += f"\n\n--- Contexto interno da sessão ---\n{extra_context}\n---"
+                kwargs["instructions"] = instructions
                 kwargs["input"] = next_input
             else:
                 kwargs["previous_response_id"] = previous_response_id
@@ -166,6 +171,7 @@ def run_tool_agent_stream(
     notes_service: Any,
     api_key: str | None = None,
     model: str | None = None,
+    additional_system_context: str | None = None,
 ) -> Iterator[str]:
     text = run_tool_agent(
         messages,
@@ -175,6 +181,7 @@ def run_tool_agent_stream(
         notes_service=notes_service,
         api_key=api_key,
         model=model,
+        additional_system_context=additional_system_context,
     )
     step = 32
     for i in range(0, len(text), step):

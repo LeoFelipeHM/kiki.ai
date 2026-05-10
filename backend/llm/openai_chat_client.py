@@ -34,6 +34,7 @@ def generate_reply_with_tools(
     notes_service: Any,
     api_key: str | None = None,
     model: str | None = None,
+    additional_system_context: str | None = None,
 ) -> str:
     """Próxima mensagem do assistente (OpenAI Responses API) com web_search + tool-calling para calendário/notas."""
     try:
@@ -45,6 +46,7 @@ def generate_reply_with_tools(
             notes_service=notes_service,
             api_key=api_key,
             model=model,
+            additional_system_context=additional_system_context,
         )
     except ToolAgentError as exc:
         raise OpenAIChatCompletionError(str(exc)) from exc
@@ -59,6 +61,7 @@ def generate_reply_stream_with_tools(
     notes_service: Any,
     api_key: str | None = None,
     model: str | None = None,
+    additional_system_context: str | None = None,
 ) -> Iterator[str]:
     """Streaming compatível com SSE, após execução de tools (OpenAI Responses API)."""
     try:
@@ -70,6 +73,7 @@ def generate_reply_stream_with_tools(
             notes_service=notes_service,
             api_key=api_key,
             model=model,
+            additional_system_context=additional_system_context,
         )
     except ToolAgentError as exc:
         raise OpenAIChatCompletionError(str(exc)) from exc

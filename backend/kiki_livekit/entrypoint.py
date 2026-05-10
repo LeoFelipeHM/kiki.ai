@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -57,11 +58,41 @@ def _fetch_user_assistant_voice(database_url: str, user_id: str) -> str | None:
     return str(v).strip() if v else None
 
 
+class _VoiceSessionNotesService:
+    def __init__(self, inner: NotesService, assistant: "KikiVoiceAssistant") -> None:
+        self._inner = inner
+        self._assistant = assistant
+
+    def list_notes(self, *args: Any, **kwargs: Any) -> Any:
+        return self._inner.list_notes(*args, **kwargs)
+
+    def create_note(self, *args: Any, **kwargs: Any) -> Any:
+        row = self._inner.create_note(*args, **kwargs)
+        self._assistant.remember_active_note(row)
+        return row
+
+    def get_note(self, *args: Any, **kwargs: Any) -> Any:
+        return self._inner.get_note(*args, **kwargs)
+
+    def update_note(self, *args: Any, **kwargs: Any) -> Any:
+        row = self._inner.update_note(*args, **kwargs)
+        if row:
+            self._assistant.remember_active_note(row)
+        return row
+
+    def delete_note(self, user_id: str, note_id: str) -> bool:
+        ok = self._inner.delete_note(user_id, note_id)
+        if ok:
+            self._assistant.forget_active_note(note_id)
+        return ok
+
+
 class KikiVoiceAssistant(Agent):
     def __init__(self, *, user_id: str, user_timezone: str, database_url: str) -> None:
         self._user_id = user_id
         self._user_timezone = user_timezone
         self._database_url = database_url
+        self._active_note: dict[str, Any] | None = None
         super().__init__(
             instructions="""Você é a Kiki, assistente pessoal por voz no Brasil.
 Responda em português do Brasil, em frases curtas e naturais para conversa falada.
@@ -83,6 +114,44 @@ Formatação para fala (muito importante):
 - Converta para formato falado: "9 de setembro de 2012", "9 de maio de 2026", "nove e meia", "nove horas e trinta".
 - Prefira números simples e naturais na fala. Se necessário, diga por extenso (ex.: "dezesseis" em vez de "16").
 - Ao citar intervalos, fale "das X às Y" e inclua o dia quando necessário.""",
+        )
+
+    def remember_active_note(self, row: dict[str, Any]) -> None:
+        note_id = str(row.get("id") or "").strip()
+        if not note_id:
+            return
+        self._active_note = {
+            "id": note_id,
+            "title": str(row.get("title") or "").strip(),
+            "content": str(row.get("content") or "").strip(),
+            "tags": list(row.get("tags") or []),
+        }
+
+    def forget_active_note(self, note_id: str) -> None:
+        active_id = str((self._active_note or {}).get("id") or "")
+        if active_id and active_id == str(note_id):
+            self._active_note = None
+
+    def voice_session_context(self) -> str | None:
+        if not self._active_note:
+            return None
+
+        title = self._active_note.get("title") or "(sem título)"
+        content = str(self._active_note.get("content") or "")
+        if len(content) > 2000:
+            content = content[:2000].rstrip() + "... [conteúdo truncado]"
+        tags = ", ".join(str(t) for t in self._active_note.get("tags") or [])
+
+        return (
+            "Nota ativa nesta sessão de voz:\n"
+            f"- note_id: {self._active_note['id']}\n"
+            f"- título: {title}\n"
+            f"- conteúdo atual: {content or '(vazio)'}\n"
+            f"- tags: {tags or '(nenhuma)'}\n\n"
+            "Se o usuário pedir para alterar, corrigir, completar, acrescentar ou remover algo de "
+            "\"essa nota\", \"ela\", \"a nota\" ou da nota recém-criada sem identificar outra nota, "
+            "use notes_update_note com esse note_id. Não use notes_create_note para alterações da nota ativa. "
+            "Só crie uma nova nota quando o usuário pedir explicitamente uma nova nota."
         )
 
     async def llm_node(
@@ -117,13 +186,17 @@ Formatação para fala (muito importante):
 
         with psycopg.connect(self._database_url, row_factory=dict_row) as conn:
             calendar_service = CalendarService(conn, PostgresCalendarRepository(conn))
-            notes_service = NotesService(conn, PostgresNotesRepository(conn))
+            notes_service = _VoiceSessionNotesService(
+                NotesService(conn, PostgresNotesRepository(conn)),
+                self,
+            )
             reply = generate_reply_with_tools(
                 pairs,
                 current_user_id=self._user_id,
                 current_user_timezone=self._user_timezone,
                 calendar_service=calendar_service,
                 notes_service=notes_service,
+                additional_system_context=self.voice_session_context(),
             )
 
         return reply
