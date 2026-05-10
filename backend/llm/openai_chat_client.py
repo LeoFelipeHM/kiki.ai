@@ -35,7 +35,7 @@ def generate_reply_with_tools(
     api_key: str | None = None,
     model: str | None = None,
 ) -> str:
-    """Próxima mensagem do assistente (Chat Completions) com tool-calling para calendário/notas."""
+    """Próxima mensagem do assistente (OpenAI Responses API) com web_search + tool-calling para calendário/notas."""
     try:
         return run_tool_agent(
             messages,
@@ -60,7 +60,7 @@ def generate_reply_stream_with_tools(
     api_key: str | None = None,
     model: str | None = None,
 ) -> Iterator[str]:
-    """Streaming compatível com SSE, após execução de tools (emite a resposta final em partes)."""
+    """Streaming compatível com SSE, após execução de tools (OpenAI Responses API)."""
     try:
         yield from run_tool_agent_stream(
             messages,

@@ -37,7 +37,7 @@ def tools_schema() -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "calendar_create_event",
-                "description": "Cria um evento no calendário do usuário. Use ISO 8601 com timezone/offset (ex.: 2026-05-09T09:00:00-03:00) para evitar erro de fuso.",
+                "description": "Cria um ou vários eventos no calendário. Sem recurrence = um único evento. Com recurrence = série (limite máximo 100 ocorrências e 730 dias após o primeiro início; informe count e/ou until_iso). Use ISO 8601 com timezone.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -59,6 +59,21 @@ def tools_schema() -> list[dict[str, Any]]:
                                 "required": ["name"],
                                 "additionalProperties": False,
                             },
+                        },
+                        "recurrence": {
+                            "type": ["object", "null"],
+                            "description": "Opcional. frequency: daily | weekly | monthly | yearly; interval (padrão 1); informe count (total de ocorrências) e/ou until_iso (último início permitido).",
+                            "properties": {
+                                "frequency": {
+                                    "type": "string",
+                                    "enum": ["daily", "weekly", "monthly", "yearly"],
+                                },
+                                "interval": {"type": "integer", "minimum": 1},
+                                "count": {"type": ["integer", "null"], "minimum": 1},
+                                "until_iso": {"type": ["string", "null"]},
+                            },
+                            "required": ["frequency"],
+                            "additionalProperties": False,
                         },
                     },
                     "required": ["title", "starts_at", "ends_at", "event_type"],
@@ -184,4 +199,21 @@ def tools_schema() -> list[dict[str, Any]]:
             },
         },
     ]
+
+
+def tools_schema_responses() -> list[dict[str, Any]]:
+    """Mesmas ferramentas no formato FunctionToolParam da Responses API (flat ``type``/``name``/``parameters``)."""
+    result: list[dict[str, Any]] = []
+    for t in tools_schema():
+        fn = t["function"]
+        result.append(
+            {
+                "type": "function",
+                "name": fn["name"],
+                "description": fn.get("description"),
+                "parameters": fn["parameters"],
+                "strict": False,
+            }
+        )
+    return result
 

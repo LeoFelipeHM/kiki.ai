@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 from collections.abc import Iterator
 from typing import Any, cast
 
 from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
-from llm.prompts.kiki_system import KIKI_SYSTEM_PROMPT
+from llm.prompts.kiki_system import build_kiki_system_instructions
 from llm.tools.dispatcher import execute_tool_call
-from llm.tools.schemas import ToolName, tools_schema
-
-log = logging.getLogger("kiki.llm.agent")
+from llm.tools.schemas import ToolName, tools_schema_responses
 
 DEFAULT_MODEL = "gpt-5.4-mini"
 DEFAULT_MAX_TOOL_TURNS = 6
@@ -29,6 +26,41 @@ def _client(api_key: str | None) -> OpenAI:
     return OpenAI(api_key=key)
 
 
+def _responses_model(model: str | None) -> str:
+    return (
+        model
+        or os.getenv("OPENAI_RESPONSES_MODEL", "").strip()
+        or os.getenv("OPENAI_CHAT_MODEL", "").strip()
+        or DEFAULT_MODEL
+    ).strip()
+
+
+def _web_search_tool(user_timezone: str | None) -> dict[str, Any]:
+    tz = (user_timezone or "").strip() or "America/Sao_Paulo"
+    ctx = (os.getenv("OPENAI_WEB_SEARCH_CONTEXT_SIZE") or "medium").strip().lower()
+    if ctx not in ("low", "medium", "high"):
+        ctx = "medium"
+    return {
+        "type": "web_search",
+        "search_context_size": ctx,
+        "user_location": {
+            "type": "approximate",
+            "country": (os.getenv("OPENAI_WEB_SEARCH_COUNTRY") or "BR").strip() or "BR",
+            "timezone": tz,
+        },
+    }
+
+
+def _reasoning_param(model: str) -> dict[str, Any]:
+    raw = (os.getenv("OPENAI_REASONING_EFFORT") or "").strip().lower()
+    if not raw:
+        return {}
+    allowed = ("none", "minimal", "low", "medium", "high", "xhigh")
+    if raw not in allowed:
+        return {}
+    return {"reasoning": {"effort": raw}}
+
+
 def run_tool_agent(
     messages: list[tuple[str, str]],
     *,
@@ -40,28 +72,54 @@ def run_tool_agent(
     model: str | None = None,
     max_tool_turns: int = DEFAULT_MAX_TOOL_TURNS,
 ) -> str:
+    """Responses API: web_search (provedor) + function tools (calendário/notas)."""
     client = _client(api_key)
-    mdl = (model or os.getenv("OPENAI_CHAT_MODEL") or DEFAULT_MODEL).strip()
+    mdl = _responses_model(model)
 
-    oa_messages: list[dict[str, Any]] = [{"role": "system", "content": KIKI_SYSTEM_PROMPT}]
+    tools = [_web_search_tool(current_user_timezone)] + tools_schema_responses()
+
+    input_messages: list[dict[str, Any]] = []
     for role, text in messages:
-        oa_messages.append({"role": role, "content": text})
+        r = role if role in ("user", "assistant") else "user"
+        input_messages.append({"type": "message", "role": r, "content": text.strip()})
 
-    tools = tools_schema()
+    previous_response_id: str | None = None
+    next_input: list[dict[str, Any]] = input_messages
 
     try:
         for _ in range(max_tool_turns):
-            resp = client.chat.completions.create(model=mdl, messages=oa_messages, tools=tools)
-            choice = resp.choices[0].message
-            tool_calls = getattr(choice, "tool_calls", None)
+            kwargs: dict[str, Any] = {
+                "model": mdl,
+                "tools": tools,
+                "truncation": "auto",
+                "parallel_tool_calls": True,
+            }
+            kwargs.update(_reasoning_param(mdl))
 
-            if tool_calls:
-                oa_messages.append({"role": "assistant", "content": choice.content or "", "tool_calls": tool_calls})
-                for call in tool_calls:
-                    fn = call.function
-                    name = cast(ToolName, fn.name)
+            if previous_response_id is None:
+                kwargs["instructions"] = build_kiki_system_instructions(current_user_timezone)
+                kwargs["input"] = next_input
+            else:
+                kwargs["previous_response_id"] = previous_response_id
+                kwargs["input"] = next_input
+
+            resp = client.responses.create(**kwargs)
+
+            err = getattr(resp, "error", None)
+            if err is not None:
+                msg = getattr(err, "message", None) or str(err)
+                raise ToolAgentError(msg)
+
+            previous_response_id = resp.id
+
+            calls = [item for item in resp.output if getattr(item, "type", None) == "function_call"]
+
+            if calls:
+                outputs: list[dict[str, Any]] = []
+                for item in calls:
+                    name = cast(ToolName, item.name)
                     try:
-                        args = json.loads(fn.arguments or "{}")
+                        args = json.loads(item.arguments or "{}")
                         if not isinstance(args, dict):
                             args = {}
                     except Exception:
@@ -75,15 +133,20 @@ def run_tool_agent(
                         calendar_service=calendar_service,
                         notes_service=notes_service,
                     )
-                    oa_messages.append(
-                        {"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, ensure_ascii=False, default=str)}
+                    outputs.append(
+                        {
+                            "type": "function_call_output",
+                            "call_id": item.call_id,
+                            "output": json.dumps(result, ensure_ascii=False, default=str),
+                        }
                     )
+                next_input = outputs
                 continue
 
-            raw = (choice.content or "").strip()
-            if not raw:
-                raise ToolAgentError("Resposta vazia do modelo.")
-            return raw
+            raw = (resp.output_text or "").strip()
+            if raw:
+                return raw
+            raise ToolAgentError("Resposta vazia do modelo.")
     except (APIConnectionError, APIStatusError, RateLimitError) as exc:
         raise ToolAgentError(str(exc)) from exc
     except ToolAgentError:
@@ -116,4 +179,3 @@ def run_tool_agent_stream(
     step = 32
     for i in range(0, len(text), step):
         yield text[i : i + step]
-

@@ -6,6 +6,8 @@ from typing import Any, cast
 
 from zoneinfo import ZoneInfo
 
+from domain.calendar import RecurrenceValidationError, ScheduleConflictError
+
 from llm.tools.schemas import ToolName
 
 log = logging.getLogger("kiki.llm.tools")
@@ -55,10 +57,12 @@ def _find_conflicts(
     ends_at: datetime,
     exclude_event_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    rows = calendar_service.list_events(user_id, starts_at, ends_at)
-    if exclude_event_id:
-        rows = [r for r in rows if str(r.get("id")) != str(exclude_event_id)]
-    return rows
+    return calendar_service.find_conflicts(
+        user_id,
+        starts_at,
+        ends_at,
+        exclude_event_id=exclude_event_id,
+    )
 
 
 def execute_tool_call(
@@ -92,30 +96,6 @@ def execute_tool_call(
             starts_at = _parse_iso_dt(str(arguments.get("starts_at")), current_user_timezone)
             ends_at = _parse_iso_dt(str(arguments.get("ends_at")), current_user_timezone)
 
-            conflicts = _find_conflicts(
-                calendar_service=calendar_service,
-                user_id=current_user_id,
-                starts_at=starts_at,
-                ends_at=ends_at,
-            )
-            if conflicts:
-                preview = []
-                for c in conflicts[:3]:
-                    cs = c.get("starts_at")
-                    ce = c.get("ends_at")
-                    if isinstance(cs, datetime) and isinstance(ce, datetime):
-                        when = f"{_format_dt_for_user(cs, current_user_timezone)}–{_format_dt_for_user(ce, current_user_timezone)}"
-                    else:
-                        when = "horário indefinido"
-                    preview.append(f"- {c.get('title','(sem título)')} ({when})")
-                more = f"\n(+{len(conflicts) - 3} outros)" if len(conflicts) > 3 else ""
-                return _tool_error(
-                    "Conflito de horário: já existe(m) compromisso(s) nesse intervalo.\n"
-                    + "\n".join(preview)
-                    + more
-                    + "\nQuer que eu marque mesmo assim ou prefira outro horário?"
-                )
-
             event_type = str(arguments.get("event_type"))
             color = cast(str | None, arguments.get("color"))
             description = cast(str | None, arguments.get("description"))
@@ -128,6 +108,83 @@ def execute_tool_call(
                     continue
                 em = cast(str | None, g.get("email"))
                 guests.append((nm, (em.strip() if isinstance(em, str) and em.strip() else None)))
+
+            raw_rec = arguments.get("recurrence")
+            recurrence: dict[str, Any] | None = raw_rec if isinstance(raw_rec, dict) else None
+
+            def _conflict_block(conflicts: list[dict[str, Any]], *, slot: datetime | None = None) -> dict[str, Any]:
+                preview = []
+                for c in conflicts[:3]:
+                    cs = c.get("starts_at")
+                    ce = c.get("ends_at")
+                    if isinstance(cs, datetime) and isinstance(ce, datetime):
+                        when = f"{_format_dt_for_user(cs, current_user_timezone)}–{_format_dt_for_user(ce, current_user_timezone)}"
+                    else:
+                        when = "horário indefinido"
+                    preview.append(f"- {c.get('title','(sem título)')} ({when})")
+                more = f"\n(+{len(conflicts) - 3} outros)" if len(conflicts) > 3 else ""
+                head = "Conflito de horário na série recorrente" if slot else "Conflito de horário"
+                slot_note = ""
+                if slot is not None and isinstance(slot, datetime):
+                    slot_note = f" na ocorrência de {_format_dt_for_user(slot, current_user_timezone)}"
+                return _tool_error(
+                    f"{head}{slot_note}: já existe(m) compromisso(s) nesse intervalo.\n"
+                    + "\n".join(preview)
+                    + more
+                    + "\nQuer que eu marque mesmo assim ou prefira outro horário?"
+                )
+
+            if recurrence:
+                freq = str(recurrence.get("frequency") or "").strip()
+                if freq not in ("daily", "weekly", "monthly", "yearly"):
+                    return _tool_error("recurrence.frequency deve ser daily, weekly, monthly ou yearly.")
+                interval_raw = recurrence.get("interval")
+                try:
+                    interval = int(interval_raw) if interval_raw is not None else 1
+                except (TypeError, ValueError):
+                    return _tool_error("recurrence.interval deve ser um inteiro >= 1.")
+                count_val = recurrence.get("count")
+                count: int | None
+                try:
+                    count = int(count_val) if count_val is not None else None
+                except (TypeError, ValueError):
+                    return _tool_error("recurrence.count deve ser um inteiro quando informado.")
+                until_iso = recurrence.get("until_iso")
+                until_dt: datetime | None = None
+                if until_iso:
+                    until_dt = _parse_iso_dt(str(until_iso), current_user_timezone)
+                try:
+                    payload = calendar_service.create_recurring_series(
+                        current_user_id,
+                        title=title,
+                        starts_at=starts_at,
+                        ends_at=ends_at,
+                        event_type=event_type,
+                        color=(color.strip() if isinstance(color, str) and color.strip() else None),
+                        description=(description.strip() if isinstance(description, str) and description.strip() else None),
+                        status=status,
+                        guests=guests,
+                        frequency=freq,  # type: ignore[arg-type]
+                        interval=interval,
+                        count=count,
+                        until=until_dt,
+                    )
+                    return _tool_ok(payload)
+                except RecurrenceValidationError as exc:
+                    return _tool_error(str(exc))
+                except ScheduleConflictError as exc:
+                    slot = exc.slot_start if isinstance(exc.slot_start, datetime) else None
+                    return _conflict_block(list(exc.conflicts), slot=slot)
+
+            conflicts = _find_conflicts(
+                calendar_service=calendar_service,
+                user_id=current_user_id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+            )
+            if conflicts:
+                return _conflict_block(conflicts)
+
             row = calendar_service.create_event(
                 current_user_id,
                 title=title,

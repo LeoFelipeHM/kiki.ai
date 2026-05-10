@@ -21,6 +21,15 @@ Outras variáveis (ex.: backend/.env):
   KIKI_VOICE_AGENT_NAME  Opcional; default: kiki-voice (nome do agente no dispatch)
   AZURE_TTS_VOICE        Opcional; default: pt-BR-FranciscaNeural
 
+  OpenAI (mesmo núcleo do chat HTTP; o llm_node da voz chama ``generate_reply_with_tools``):
+
+  OPENAI_API_KEY         Obrigatório para o raciocínio do agente (Responses API).
+  OPENAI_RESPONSES_MODEL Opcional; modelo da Responses API (default: OPENAI_CHAT_MODEL ou gpt-5.4-mini).
+  OPENAI_CHAT_MODEL      Fallback se OPENAI_RESPONSES_MODEL não estiver definido.
+  OPENAI_WEB_SEARCH_CONTEXT_SIZE  Opcional: low | medium | high (default medium).
+  OPENAI_WEB_SEARCH_COUNTRY       Opcional; código ISO do país para relevância da busca (default BR).
+  OPENAI_REASONING_EFFORT        Opcional; none|minimal|low|medium|high|xhigh para modelos com raciocínio.
+
 Comandos (CLI LiveKit Agents):
 
   python livekit_service.py download-files   — baixa artefatos (Silero VAD, etc.)

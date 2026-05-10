@@ -4,7 +4,8 @@ from typing import Any
 import psycopg
 
 from application.ports import CalendarRepository
-from domain.calendar import InvalidEventIntervalError
+from domain.calendar import InvalidEventIntervalError, ScheduleConflictError
+from domain.recurrence import RecurrenceFrequency, expand_recurrence
 
 
 class CalendarService:
@@ -24,6 +25,19 @@ class CalendarService:
         range_to: datetime | None,
     ) -> list[dict[str, Any]]:
         return self._repo.list_events(user_id, range_from, range_to)
+
+    def find_conflicts(
+        self,
+        user_id: str,
+        starts_at: datetime,
+        ends_at: datetime,
+        *,
+        exclude_event_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        rows = self.list_events(user_id, starts_at, ends_at)
+        if exclude_event_id:
+            rows = [r for r in rows if str(r.get("id")) != str(exclude_event_id)]
+        return rows
 
     def create_event(
         self,
@@ -52,6 +66,64 @@ class CalendarService:
         )
         self._conn.commit()
         return row
+
+    def create_recurring_series(
+        self,
+        user_id: str,
+        *,
+        title: str,
+        starts_at: datetime,
+        ends_at: datetime,
+        event_type: str,
+        color: str | None,
+        description: str | None,
+        status: str,
+        guests: list[tuple[str, str | None]],
+        frequency: RecurrenceFrequency,
+        interval: int,
+        count: int | None,
+        until: datetime | None,
+    ) -> dict[str, Any]:
+        """Cria várias linhas em `calendar_events` (uma por ocorrência), uma única transação."""
+        slots = expand_recurrence(
+            starts_at,
+            ends_at,
+            frequency=frequency,
+            interval=interval,
+            count=count,
+            until=until,
+        )
+        for slot_start, slot_end in slots:
+            self._ensure_interval(slot_start, slot_end)
+            conflicts = self.find_conflicts(user_id, slot_start, slot_end)
+            if conflicts:
+                raise ScheduleConflictError(slot_start, conflicts)
+
+        created: list[dict[str, Any]] = []
+        try:
+            for slot_start, slot_end in slots:
+                row = self._repo.create_event(
+                    user_id,
+                    title,
+                    slot_start,
+                    slot_end,
+                    event_type,
+                    color,
+                    description,
+                    status,
+                    guests,
+                )
+                created.append(row)
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+
+        return {
+            "events": created,
+            "occurrences": len(created),
+            "recurrence": {"frequency": frequency, "interval": interval, "count": count, "until": until},
+        }
 
     def get_event(self, user_id: str, event_id: str) -> dict[str, Any] | None:
         return self._repo.get_event(user_id, event_id)
