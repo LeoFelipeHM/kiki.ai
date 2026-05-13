@@ -531,3 +531,9 @@
     }
   }
 }
+
+@layer components {
+  .transition-smooth {
+    transition: all 0.2s ease-out;
+  }
+}

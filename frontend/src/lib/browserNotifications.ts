@@ -106,7 +106,7 @@ export function showBrowserNotification(opts: ShowBrowserNotificationOptions): N
     title,
     body,
     tag,
-    icon = '/favicon.svg',
+    icon = '/favicon-32x32.png',
     withSound,
     withVibration,
     onClick,

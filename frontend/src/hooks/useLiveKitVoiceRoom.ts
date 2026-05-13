@@ -1,19 +1,66 @@
 import { useCallback, useRef, useState } from 'react';
-import { Room, RoomEvent, ConnectionState, Track } from 'livekit-client';
+import { Room, RoomEvent, ConnectionState, Track, type Participant } from 'livekit-client';
 
 import { fetchVoiceSession } from '@/services/voiceLivekit';
 
 export type VoiceConnectionPhase = 'idle' | 'connecting' | 'connected' | 'error';
 
-/** Estado visual da troca de falas (baseado em falantes ativos no quarto). */
-export type VoiceTurnVisual = 'idle' | 'user-speaking' | 'kiki-speaking';
+/** Estado visual da troca de falas (lk.agent.state + falantes ativos). */
+export type VoiceTurnVisual = 'idle' | 'user-speaking' | 'thinking' | 'kiki-speaking';
+
+/** Estados publicados pelo agente em `participant.attributes['lk.agent.state']`. */
+export type LkAgentState = 'idle' | 'initializing' | 'listening' | 'thinking' | 'speaking';
+
+const TRANSCRIPTION_TOPIC = 'lk.transcription';
+
+function parseAgentState(attrs: Readonly<Record<string, string>>): LkAgentState | null {
+  const v = attrs['lk.agent.state'];
+  if (
+    v === 'idle' ||
+    v === 'initializing' ||
+    v === 'listening' ||
+    v === 'thinking' ||
+    v === 'speaking'
+  ) {
+    return v;
+  }
+  return null;
+}
+
+function findAgentParticipant(room: Room): Participant | undefined {
+  if (room.localParticipant.isAgent) {
+    return room.localParticipant;
+  }
+  for (const p of room.remoteParticipants.values()) {
+    if (p.isAgent) return p;
+  }
+  return undefined;
+}
+
+function computeTurnVisual(room: Room, agentState: LkAgentState | null): VoiceTurnVisual {
+  if (agentState === 'thinking') return 'thinking';
+  if (agentState === 'speaking') return 'kiki-speaking';
+
+  const speakers = room.activeSpeakers;
+  const local = room.localParticipant;
+  const userTalking = speakers.some((s) => s.sid === local.sid);
+  const agentTalking = speakers.some((s) => s.sid !== local.sid);
+
+  if (agentTalking) return 'kiki-speaking';
+  if (userTalking) return 'user-speaking';
+  return 'idle';
+}
 
 export function useLiveKitVoiceRoom() {
   const roomRef = useRef<Room | null>(null);
+  const agentStateRef = useRef<LkAgentState | null>(null);
   const playbackUnlockCleanupRef = useRef<(() => void) | null>(null);
   const remoteAudioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const [phase, setPhase] = useState<VoiceConnectionPhase>('idle');
   const [turnVisual, setTurnVisual] = useState<VoiceTurnVisual>('idle');
+  const [agentState, setAgentState] = useState<LkAgentState | null>(null);
+  const [userTranscript, setUserTranscript] = useState('');
+  const [agentTranscript, setAgentTranscript] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [micEnabled, setMicEnabled] = useState(true);
 
@@ -34,13 +81,14 @@ export function useLiveKitVoiceRoom() {
   }, []);
 
   const refreshSpeakingHint = useCallback((room: Room) => {
-    const speakers = room.activeSpeakers;
-    const local = room.localParticipant;
-    const userTalking = speakers.some((s) => s.sid === local.sid);
-    const agentTalking = speakers.some((s) => s.sid !== local.sid);
-    if (agentTalking) setTurnVisual('kiki-speaking');
-    else if (userTalking) setTurnVisual('user-speaking');
-    else setTurnVisual('idle');
+    const agentParticipant = findAgentParticipant(room);
+    const parsed = agentParticipant ? parseAgentState(agentParticipant.attributes) : null;
+    if (parsed) {
+      agentStateRef.current = parsed;
+      setAgentState(parsed);
+    }
+    const effective = parsed ?? agentStateRef.current;
+    setTurnVisual(computeTurnVisual(room, effective));
   }, []);
 
   const disconnect = useCallback(async () => {
@@ -54,6 +102,10 @@ export function useLiveKitVoiceRoom() {
     }
     setPhase('idle');
     setTurnVisual('idle');
+    setAgentState(null);
+    agentStateRef.current = null;
+    setUserTranscript('');
+    setAgentTranscript('');
     setErrorMessage(null);
     setMicEnabled(true);
   }, []);
@@ -64,6 +116,10 @@ export function useLiveKitVoiceRoom() {
     setErrorMessage(null);
     setPhase('connecting');
     setTurnVisual('idle');
+    setAgentState(null);
+    agentStateRef.current = null;
+    setUserTranscript('');
+    setAgentTranscript('');
 
     let room: Room | undefined;
     try {
@@ -86,16 +142,59 @@ export function useLiveKitVoiceRoom() {
         console.debug('[voice] startAudio() bloqueado (precisa de gesto do usuário?)', err);
       });
 
-      room.on(RoomEvent.ActiveSpeakersChanged, () => refreshSpeakingHint(room));
-      room.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
+      const onActiveSpeakersChanged = () => refreshSpeakingHint(room);
+
+      const onParticipantOrAttributes = (participant: Participant) => {
+        if (!participant.isAgent) return;
+        const next = parseAgentState(participant.attributes);
+        if (next) {
+          agentStateRef.current = next;
+          setAgentState(next);
+          if (next === 'thinking') {
+            setAgentTranscript('');
+          }
+        }
+        refreshSpeakingHint(room);
+      };
+
+      room.on(RoomEvent.ActiveSpeakersChanged, onActiveSpeakersChanged);
+
+      room.on(RoomEvent.ParticipantConnected, (p) => onParticipantOrAttributes(p));
+      room.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => onParticipantOrAttributes(p));
+
+      room.registerTextStreamHandler(TRANSCRIPTION_TOPIC, async (reader, participantInfo) => {
+        const r = roomRef.current;
+        if (!r) return;
+        const localId = r.localParticipant.identity;
+        const isUserSpeech = participantInfo.identity === localId;
+        try {
+          for await (const chunk of reader) {
+            if (isUserSpeech) {
+              setUserTranscript(chunk);
+            } else {
+              setAgentTranscript(chunk);
+            }
+          }
+        } catch (err) {
+          console.debug('[voice] transcription stream ended', err);
+        }
+      });
+
+      const onConnectionStateChanged = (state: ConnectionState) => {
         console.debug('[voice] ConnectionStateChanged', state);
         if (state === ConnectionState.Connected) setPhase('connected');
         if (state === ConnectionState.Disconnected) {
           cleanupRemoteAudio();
           setPhase('idle');
           setTurnVisual('idle');
+          setAgentState(null);
+          agentStateRef.current = null;
+          setUserTranscript('');
+          setAgentTranscript('');
         }
-      });
+      };
+
+      room.on(RoomEvent.ConnectionStateChanged, onConnectionStateChanged);
 
       /** Áudio remoto do agente fica mudo até ``startAudio()`` (política dos browsers). */
       const tryUnlockAgentPlayback = () => {
@@ -163,8 +262,13 @@ export function useLiveKitVoiceRoom() {
 
       room.on(RoomEvent.TrackSubscribed, onRemoteAudioTrack);
       playbackUnlockCleanupRef.current = () => {
+        room.off(RoomEvent.ActiveSpeakersChanged, onActiveSpeakersChanged);
+        room.off(RoomEvent.ConnectionStateChanged, onConnectionStateChanged);
         room.off(RoomEvent.TrackSubscribed, onRemoteAudioTrack);
         room.off(RoomEvent.TrackUnsubscribed, onRemoteTrackUnsubscribed);
+        room.off(RoomEvent.ParticipantConnected, onParticipantOrAttributes);
+        room.off(RoomEvent.ParticipantAttributesChanged, onParticipantOrAttributes);
+        room.unregisterTextStreamHandler(TRANSCRIPTION_TOPIC);
       };
       room.on(RoomEvent.TrackUnsubscribed, onRemoteTrackUnsubscribed);
 
@@ -176,7 +280,9 @@ export function useLiveKitVoiceRoom() {
 
       roomRef.current = room;
       setPhase('connected');
-      refreshSpeakingHint(room);
+      for (const p of room.remoteParticipants.values()) {
+        if (p.isAgent) onParticipantOrAttributes(p);
+      }
     } catch (e) {
       console.debug('[voice] connect failed', e);
       playbackUnlockCleanupRef.current?.();
@@ -207,6 +313,9 @@ export function useLiveKitVoiceRoom() {
     toggleMicrophone,
     phase,
     turnVisual,
+    agentState,
+    userTranscript,
+    agentTranscript,
     errorMessage,
     micEnabled,
     isConnected: phase === 'connected',

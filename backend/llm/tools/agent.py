@@ -8,6 +8,7 @@ from typing import Any, cast
 from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
 from llm.prompts.kiki_system import build_kiki_system_instructions
+from llm.sanitize import sanitize_reply
 from llm.tools.dispatcher import execute_tool_call
 from llm.tools.schemas import ToolName, tools_schema_responses
 
@@ -152,7 +153,7 @@ def run_tool_agent(
 
             raw = (resp.output_text or "").strip()
             if raw:
-                return raw
+                return sanitize_reply(raw)
             raise ToolAgentError("Resposta vazia do modelo.")
     except (APIConnectionError, APIStatusError, RateLimitError) as exc:
         raise ToolAgentError(str(exc)) from exc

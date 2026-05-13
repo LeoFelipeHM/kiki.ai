@@ -113,13 +113,13 @@ class PostgresUsageRepository:
         return out
 
     def fetch_timeseries(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
-        """Um registro por dia UTC: uso agregado + eventos de calendário criados (por created_at)."""
+        """Um registro por dia no calendário de Brasília: uso agregado + eventos de calendário criados."""
         usage_by_day: dict[str, dict[str, int]] = {}
         with self._conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT
-                  (DATE(created_at AT TIME ZONE 'UTC')) AS day,
+                  (DATE(created_at AT TIME ZONE 'America/Sao_Paulo')) AS day,
                   COUNT(*) FILTER (WHERE usage_kind IN ('login', 'token_refresh'))::bigint AS accesses,
                   COUNT(*) FILTER (WHERE usage_kind = 'chat_completion')::bigint AS chat_completion,
                   COUNT(*) FILTER (WHERE usage_kind = 'voice_session')::bigint AS voice_session
@@ -144,7 +144,7 @@ class PostgresUsageRepository:
             cur.execute(
                 """
                 SELECT
-                  (DATE(created_at AT TIME ZONE 'UTC')) AS day,
+                  (DATE(created_at AT TIME ZONE 'America/Sao_Paulo')) AS day,
                   COUNT(*)::bigint AS c
                 FROM calendar_events
                 WHERE created_at >= %s AND created_at <= %s

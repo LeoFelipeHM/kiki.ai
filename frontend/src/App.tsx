@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BrowserRouter, useNavigate } from 'react-router-dom';
+import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from './components/ThemeProvider';
 import type { CalendarEvent } from './types/calendar';
 import { AuthSessionExpiredError, initializeAuthSession, login, logout } from './services/auth';
@@ -19,6 +19,7 @@ import { RootRoutes } from './root';
 
 function AppRoutes() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -54,14 +55,14 @@ function AppRoutes() {
     setIsMenuOpen(false);
     setEvents([]);
     setNotificationPrefs(null);
-    navigate(ROUTES.login, { replace: true });
+    navigate(ROUTES.landing, { replace: true });
   }, [navigate]);
 
   const handleSessionExpired = useCallback(() => {
     setIsAuthenticated(false);
     setEvents([]);
     setNotificationPrefs(null);
-    navigate(ROUTES.login, { replace: true });
+    navigate(ROUTES.landing, { replace: true });
   }, [navigate]);
 
   const handleLogin = useCallback(
@@ -180,6 +181,12 @@ function AppRoutes() {
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
   }, [navigate]);
 
+  const isPublicFullWidthLanding =
+    !isAuthLoading && !isAuthenticated && location.pathname === ROUTES.landing;
+
+  /** Marketing do bundle é sempre light; evita tokens dark na landing pública. */
+  const shellIsDark = appearance === 'dark' && !isPublicFullWidthLanding;
+
   const shellValue = useMemo(
     (): AppShellContextValue => ({
       profileData,
@@ -214,14 +221,18 @@ function AppRoutes() {
   return (
     <ThemeProvider themeColor={themeColor} appearance={appearance}>
       <div
-        className={`size-full flex flex-col bg-background max-w-md mx-auto ${appearance === 'dark' ? 'dark' : ''}`}
+        className={`size-full flex flex-col bg-background ${isPublicFullWidthLanding ? 'w-full' : 'max-w-md mx-auto'} ${shellIsDark ? 'dark' : ''}`}
       >
         {isAuthLoading ? (
           <div className="size-full flex items-center justify-center">
             <div className="w-8 h-8 rounded-full border-2 border-purple-200 border-t-purple-500 animate-spin" />
           </div>
         ) : (
-          <div className="flex h-full min-h-0 flex-1 flex-col w-full overflow-hidden">
+          <div
+            className={`flex h-full min-h-0 flex-1 flex-col w-full ${
+              isPublicFullWidthLanding ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'
+            }`}
+          >
             <RootRoutes
               isAuthenticated={isAuthenticated}
               handleLogin={handleLogin}

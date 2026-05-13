@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import psycopg
 
@@ -20,6 +21,9 @@ from infrastructure.security.jwt_tokens import JwtTokens
 from infrastructure.security.password_hasher import PasswordHasher
 
 
+_BRASILIA = ZoneInfo("America/Sao_Paulo")
+
+
 def _truncate_user_agent(user_agent: str | None, max_len: int = 512) -> str | None:
     if not user_agent:
         return None
@@ -27,6 +31,16 @@ def _truncate_user_agent(user_agent: str | None, max_len: int = 512) -> str | No
     if len(u) <= max_len:
         return u
     return u[: max_len - 3] + "..."
+
+
+def _access_event_metadata(ip_address: str | None, user_agent: str | None) -> dict[str, Any]:
+    """Metadados de acesso com instante explícito no fuso de Brasília (auditoria / exibição)."""
+    return {
+        "ip": ip_address,
+        "user_agent": _truncate_user_agent(user_agent),
+        "timezone": "America/Sao_Paulo",
+        "local_time": datetime.now(_BRASILIA).isoformat(timespec="seconds"),
+    }
 
 
 class AuthService:
@@ -115,7 +129,7 @@ class AuthService:
         self._usage.insert_event(
             str(authenticated_user["id"]),
             "login",
-            {"ip": ip_address, "user_agent": _truncate_user_agent(user_agent)},
+            _access_event_metadata(ip_address, user_agent),
         )
         self._conn.commit()
         return tokens
@@ -165,7 +179,7 @@ class AuthService:
         self._usage.insert_event(
             str(user["id"]),
             "token_refresh",
-            {"ip": ip_address, "user_agent": _truncate_user_agent(user_agent)},
+            _access_event_metadata(ip_address, user_agent),
         )
         self._conn.commit()
 

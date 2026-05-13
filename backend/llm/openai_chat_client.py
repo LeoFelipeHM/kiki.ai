@@ -8,6 +8,7 @@ from typing import Any
 from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
 from llm.prompts.kiki_system import KIKI_SYSTEM_PROMPT
+from llm.sanitize import sanitize_reply
 from llm.tools.agent import ToolAgentError, run_tool_agent, run_tool_agent_stream
 
 DEFAULT_MODEL = "gpt-5.4-mini"
@@ -138,7 +139,7 @@ def generate_reply(
     raw = (choice.content or "").strip()
     if not raw:
         raise OpenAIChatCompletionError("Resposta vazia do modelo.")
-    return raw
+    return sanitize_reply(raw)
 
 
 def generate_reply_stream(
@@ -166,7 +167,7 @@ def generate_reply_stream(
     except Exception as exc:
         raise OpenAIChatCompletionError(str(exc)) from exc
 
-    emitted = False
+    buf: list[str] = []
     try:
         for chunk in stream:
             choice = chunk.choices[0] if chunk.choices else None
@@ -177,12 +178,16 @@ def generate_reply_stream(
                 continue
             piece = delta.content or ""
             if piece:
-                emitted = True
-                yield piece
+                buf.append(piece)
     except (APIConnectionError, APIStatusError, RateLimitError) as exc:
         raise OpenAIChatCompletionError(str(exc)) from exc
     except Exception as exc:
         raise OpenAIChatCompletionError(str(exc)) from exc
 
-    if not emitted:
+    if not buf:
         raise OpenAIChatCompletionError("Resposta vazia do modelo.")
+
+    cleaned = sanitize_reply("".join(buf))
+    step = 32
+    for i in range(0, len(cleaned), step):
+        yield cleaned[i : i + step]

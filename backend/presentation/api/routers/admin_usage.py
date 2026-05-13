@@ -1,5 +1,6 @@
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -15,11 +16,14 @@ from presentation.api.schemas.admin_usage import (
 
 router = APIRouter(prefix="/admin/usage", tags=["admin"])
 
+_BRASILIA = ZoneInfo("America/Sao_Paulo")
+
 
 def _resolve_range(
     date_from: date | None,
     date_to: date | None,
 ) -> tuple[datetime, datetime]:
+    """Retorna [start, end] em UTC para filtrar TIMESTAMPTZ; datas explícitas são dias em Brasília."""
     if date_from is None and date_to is None:
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=30)
@@ -34,8 +38,10 @@ def _resolve_range(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="date_to deve ser maior ou igual a date_from.",
         )
-    start = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
-    end = datetime.combine(date_to, time(23, 59, 59, 999999), tzinfo=timezone.utc)
+    start = datetime.combine(date_from, time.min, tzinfo=_BRASILIA).astimezone(timezone.utc)
+    end = datetime.combine(date_to, time(23, 59, 59, 999999), tzinfo=_BRASILIA).astimezone(
+        timezone.utc
+    )
     return start, end
 
 
@@ -45,11 +51,15 @@ def usage_summary(
     conn: DbConnDep,
     date_from: Annotated[
         date | None,
-        Query(description="Início do período (UTC). Omitir junto com date_to = últimos 30 dias."),
+        Query(
+            description="Início do período (calendário America/Sao_Paulo). Omitir junto com date_to = últimos 30 dias.",
+        ),
     ] = None,
     date_to: Annotated[
         date | None,
-        Query(description="Fim do período (UTC, inclusive). Omitir junto com date_from = últimos 30 dias."),
+        Query(
+            description="Fim do período (calendário America/Sao_Paulo, inclusive). Omitir junto com date_from = últimos 30 dias.",
+        ),
     ] = None,
 ):
     start, end = _resolve_range(date_from, date_to)
@@ -78,11 +88,15 @@ def usage_timeseries(
     conn: DbConnDep,
     date_from: Annotated[
         date | None,
-        Query(description="Início do período (UTC). Omitir junto com date_to = últimos 30 dias."),
+        Query(
+            description="Início do período (calendário America/Sao_Paulo). Omitir junto com date_to = últimos 30 dias.",
+        ),
     ] = None,
     date_to: Annotated[
         date | None,
-        Query(description="Fim do período (UTC, inclusive). Omitir junto com date_from = últimos 30 dias."),
+        Query(
+            description="Fim do período (calendário America/Sao_Paulo, inclusive). Omitir junto com date_from = últimos 30 dias.",
+        ),
     ] = None,
 ):
     start, end = _resolve_range(date_from, date_to)

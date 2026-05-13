@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "gen:favicons": "node scripts/generate-favicons.mjs",
+    "prebuild": "node scripts/generate-favicons.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -76,6 +78,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
+    "sharp": "^0.33.5",
     "tailwindcss": "^4.2.4",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",

@@ -3,6 +3,7 @@
  * Importe de `@/navigation/routes` ou `@/root.paths`.
  */
 export const ROUTES = {
+  landing: '/',
   login: '/login',
   home: '/home',
   chat: '/chat',

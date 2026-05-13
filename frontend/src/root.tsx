@@ -23,13 +23,14 @@ import { IntegrationPage } from './pages/IntegrationPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AdminUsagePage } from './pages/AdminUsagePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { PublicLandingPage } from './pages/PublicLandingPage';
 
 export { ROUTES, ROUTE_PATTERNS } from './root.paths';
 
 /** Mapa legível: URL → página (documentação e eventual uso em menus dinâmicos) */
 export const PAGE_REGISTRY = [
+  { path: ROUTES.landing, title: 'Landing' },
   { path: ROUTES.login, title: 'Login' },
-  { path: '/', title: 'Raiz (redireciona)' },
   { path: ROUTES.home, title: 'Início' },
   { path: ROUTES.chat, title: 'Chat com Kiki' },
   { path: ROUTES.calendar, title: 'Calendário' },
@@ -117,8 +118,10 @@ export function RootRoutes({
         }
       />
       <Route
-        path="/"
-        element={<Navigate to={isAuthenticated ? ROUTES.home : ROUTES.login} replace />}
+        path={ROUTES.landing}
+        element={
+          isAuthenticated ? <Navigate to={ROUTES.home} replace /> : <PublicLandingPage />
+        }
       />
       <Route
         element={
@@ -152,7 +155,7 @@ export function RootRoutes({
       </Route>
       <Route
         path="*"
-        element={<Navigate to={isAuthenticated ? ROUTES.home : ROUTES.login} replace />}
+        element={<Navigate to={isAuthenticated ? ROUTES.home : ROUTES.landing} replace />}
       />
     </Routes>
   );

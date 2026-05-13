@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 import psycopg
 from livekit import agents
-from livekit.agents import Agent, AgentServer, AgentSession, JobContext, TurnHandlingOptions, llm
+from livekit.agents import Agent, AgentServer, AgentSession, JobContext, TurnHandlingOptions, llm, room_io
 from livekit.plugins import silero
 from psycopg.rows import dict_row
 
@@ -245,6 +245,10 @@ async def kiki_voice_entrypoint(ctx: JobContext) -> None:
     await session.start(
         room=ctx.room,
         agent=KikiVoiceAssistant(user_id=user_id, user_timezone=user_timezone, database_url=database_url),
+        # Texto no cliente assim que o modelo/TTS geram (menos espera alinhando áudio).
+        room_options=room_io.RoomOptions(
+            text_output=room_io.TextOutputOptions(sync_transcription=False),
+        ),
     )
     await session.generate_reply(
         instructions="Cumprimente brevemente em português do Brasil e pergunte como pode ajudar.",

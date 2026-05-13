@@ -18,8 +18,8 @@ export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode })
     };
   }, []);
 
-  const waveMode =
-    voice.phase === 'connected' ? voice.turnVisual : ('idle' as const);
+  const waveMode: 'idle' | 'user-speaking' | 'thinking' | 'kiki-speaking' =
+    voice.phase === 'connected' ? voice.turnVisual : 'idle';
 
   const handleActivate = async () => {
     setIsCallActive(true);
@@ -51,6 +51,13 @@ export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode })
                       const x = Math.cos(angle) * distance;
                       const y = Math.sin(angle) * distance;
 
+                      const barColor =
+                        waveMode === 'user-speaking'
+                          ? 'rgb(168, 85, 247)'
+                          : waveMode === 'thinking'
+                            ? 'rgb(245, 158, 11)'
+                            : 'rgb(236, 72, 153)';
+
                       return (
                         <div
                           key={i}
@@ -59,10 +66,7 @@ export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode })
                             left: `calc(50% + ${x}px)`,
                             top: `calc(50% + ${y}px)`,
                             height: `${Math.sin(i * 0.3) * 15 + 20}px`,
-                            backgroundColor:
-                              waveMode === 'user-speaking'
-                                ? 'rgb(168, 85, 247)'
-                                : 'rgb(236, 72, 153)',
+                            backgroundColor: barColor,
                             transform: 'translate(-50%, -50%)',
                             animationDuration: `${0.5 + Math.random() * 0.5}s`,
                             animationDelay: `${i * 0.02}s`,
@@ -80,9 +84,11 @@ export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode })
                   className={`w-24 h-24 rounded-full flex items-center justify-center text-white shadow-2xl transition-all duration-500 ${
                     waveMode === 'user-speaking'
                       ? 'bg-gradient-to-br from-purple-500 to-purple-600 scale-110'
-                      : waveMode === 'kiki-speaking'
-                        ? 'bg-gradient-to-br from-pink-500 to-pink-600 scale-110'
-                        : `bg-gradient-to-br ${themeColor}`
+                      : waveMode === 'thinking'
+                        ? 'bg-gradient-to-br from-amber-500 to-orange-500 scale-110'
+                        : waveMode === 'kiki-speaking'
+                          ? 'bg-gradient-to-br from-pink-500 to-pink-600 scale-110'
+                          : `bg-gradient-to-br ${themeColor}`
                   }`}
                 >
                   <Sparkles className="w-12 h-12" />

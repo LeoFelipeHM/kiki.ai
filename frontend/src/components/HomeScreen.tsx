@@ -26,7 +26,7 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
   const { themeColor } = useTheme();
   const { setEvents, onSessionExpired } = useAppShell();
   const currentHour = new Date().getHours();
-  const greeting = currentHour < 12 ? 'Bom dia' : currentHour < 18 ? 'Boa tarde' : 'Boa noite';
+  const greeting = currentHour < 4 ? 'Boa madrugada' : currentHour < 12 ? 'Bom dia' : currentHour < 18 ? 'Boa tarde' : 'Boa noite';
   const [timeRemaining, setTimeRemaining] = useState('');
   const [minutesUntilEvent, setMinutesUntilEvent] = useState(0);
   const [isEventSoon, setIsEventSoon] = useState(false);

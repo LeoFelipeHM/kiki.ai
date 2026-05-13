@@ -5,6 +5,46 @@ import { voiceCenterPrimary, voiceCenterSecondary, voiceOverlayCaption } from '@
 import { streamChat, type ChatApiMessage } from '@/services/chat';
 import { transcribeChatAudio } from '@/services/transcription';
 
+// Web Speech API (Chrome/Edge/Safari). O TS DOM padrão não inclui esses tipos.
+interface SpeechRecognitionAlternativeLike { transcript: string }
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  0: SpeechRecognitionAlternativeLike;
+  length: number;
+}
+interface SpeechRecognitionResultListLike {
+  length: number;
+  [index: number]: SpeechRecognitionResultLike;
+}
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: SpeechRecognitionResultListLike;
+}
+interface SpeechRecognitionLike {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((e: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
+function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+const SILENCE_AUTO_SEND_MS = 1500;
+
 interface Message {
   id: number;
   text: string;
@@ -25,15 +65,56 @@ interface ChatScreenProps {
 const WELCOME_MESSAGE_FULL =
   'Olá! Sou a Kiki, sua assistente pessoal. Como posso ajudar você hoje?';
 
+const TYPING_SPEED_MS = 18;
+
+function TypingText({ text, animate, streaming, onFinished }: {
+  text: string;
+  animate: boolean;
+  streaming?: boolean;
+  onFinished?: () => void;
+}) {
+  const [revealed, setRevealed] = useState(0);
+  const textRef = useRef(text);
+  textRef.current = text;
+
+  useEffect(() => {
+    if (!animate) {
+      setRevealed(textRef.current.length);
+      return;
+    }
+    const id = window.setInterval(() => {
+      setRevealed((prev) => {
+        const target = textRef.current.length;
+        if (prev >= target) return prev;
+        return prev + 1;
+      });
+    }, TYPING_SPEED_MS);
+    return () => window.clearInterval(id);
+  }, [animate]);
+
+  useEffect(() => {
+    if (!animate) setRevealed(text.length);
+  }, [animate, text.length]);
+
+  useEffect(() => {
+    if (!streaming && animate && revealed >= text.length && text.length > 0) {
+      onFinished?.();
+    }
+  }, [streaming, animate, revealed, text.length, onFinished]);
+
+  return <>{text.slice(0, animate ? revealed : text.length)}</>;
+}
+
 const MAX_RECORDING_MS = 120_000;
 
 export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, userName = 'Maria Silva' }: ChatScreenProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 1,
-      text: '',
+      text: WELCOME_MESSAGE_FULL,
       sender: 'kiki',
       timestamp: new Date(),
+      streamingPhase: 'typing',
     },
   ]);
   const messagesRef = useRef(messages);
@@ -43,6 +124,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [isLiveDictating, setIsLiveDictating] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const voice = useLiveKitVoiceRoom();
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -51,6 +133,11 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
   const recordingMimeRef = useRef<string>('audio/webm');
   const maxRecordingTimerRef = useRef<number | null>(null);
   const stopRecordingRef = useRef<() => Promise<void>>(async () => {});
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const finalTranscriptRef = useRef<string>('');
+  const silenceTimerRef = useRef<number | null>(null);
+  const messagesEndContainerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceDisconnectRef = useRef(voice.disconnect);
   voiceDisconnectRef.current = voice.disconnect;
 
@@ -60,12 +147,22 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     };
   }, []);
 
-  const waveMode: 'idle' | 'user-speaking' | 'kiki-speaking' =
+  useEffect(() => {
+    const el = messagesEndContainerRef.current;
+    if (!el) return;
+    const scroll = () => { el.scrollTop = el.scrollHeight; };
+    scroll();
+    const observer = new MutationObserver(scroll);
+    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, []);
+
+  const waveMode: 'idle' | 'user-speaking' | 'thinking' | 'kiki-speaking' =
     voice.phase === 'connected' ? voice.turnVisual : 'idle';
 
   function messagesToApiPayload(history: Message[]): ChatApiMessage[] {
     return history
-      .filter((m) => !(m.sender === 'user' && m.isUserAudio))
+      .filter((m) => (m.text ?? '').trim().length > 0)
       .map((m) => ({
         role: m.sender === 'user' ? 'user' : 'assistant',
         content: m.text,
@@ -76,17 +173,14 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     return history.reduce((max, m) => Math.max(max, m.id), 0) + 1;
   }
 
-  /** Boas-vindas: digitação letra a letra (mensagem id 1). */
   useEffect(() => {
-    let i = 0;
-    const iv = window.setInterval(() => {
-      i += 1;
+    const delay = WELCOME_MESSAGE_FULL.length * TYPING_SPEED_MS + 200;
+    const timer = window.setTimeout(() => {
       setMessages((prev) =>
-        prev.map((m) => (m.id === 1 ? { ...m, text: WELCOME_MESSAGE_FULL.slice(0, i) } : m)),
+        prev.map((m) => (m.id === 1 ? { ...m, streamingPhase: undefined } : m)),
       );
-      if (i >= WELCOME_MESSAGE_FULL.length) window.clearInterval(iv);
-    }, 26);
-    return () => window.clearInterval(iv);
+    }, delay);
+    return () => window.clearTimeout(timer);
   }, []);
 
   /**
@@ -166,7 +260,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
             prev.map((m) => {
               if (m.id !== kikiId) return m;
               const finalText = m.text.trim() || '(Sem texto na resposta.)';
-              return { ...m, text: finalText, streamingPhase: undefined };
+              return { ...m, text: finalText };
             }),
           );
           if (interrupted) {
@@ -193,6 +287,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     const text = inputValue.trim();
     if (!text || isSending) return;
     setInputValue('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     await sendMessageWithText(text, false);
   };
 
@@ -274,6 +369,114 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     }
   }, [clearMaxRecordingTimer, isSending, isTranscribing, isRecording]);
 
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current != null) {
+      window.clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
+  const stopLiveDictation = useCallback(
+    (options?: { send?: boolean }) => {
+      const send = options?.send ?? true;
+      const recognition = recognitionRef.current;
+      if (recognition) {
+        recognition.onresult = null;
+        recognition.onerror = null;
+        recognition.onend = null;
+        try {
+          recognition.stop();
+        } catch {
+          /* ignora estados inválidos */
+        }
+      }
+      recognitionRef.current = null;
+      clearSilenceTimer();
+      setIsLiveDictating(false);
+
+      const fullText = (finalTranscriptRef.current || '').trim();
+      finalTranscriptRef.current = '';
+
+      if (send && fullText) {
+        setInputValue('');
+        void sendMessageWithText(fullText, true);
+      }
+    },
+    [clearSilenceTimer, sendMessageWithText],
+  );
+
+  const startLiveDictation = useCallback(() => {
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return false;
+    if (isSending || isTranscribing || isRecording || isLiveDictating) return true;
+
+    let recognition: SpeechRecognitionLike;
+    try {
+      recognition = new Ctor();
+    } catch {
+      return false;
+    }
+    recognition.lang = 'pt-BR';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    finalTranscriptRef.current = '';
+    setInputValue('');
+    setSendError(null);
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      let finalChunk = '';
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        const piece = result[0]?.transcript ?? '';
+        if (result.isFinal) finalChunk += piece;
+        else interim += piece;
+      }
+      if (finalChunk) {
+        const sep = finalTranscriptRef.current && !finalTranscriptRef.current.endsWith(' ') ? ' ' : '';
+        finalTranscriptRef.current = `${finalTranscriptRef.current}${sep}${finalChunk}`.replace(/\s+/g, ' ');
+      }
+      const live = `${finalTranscriptRef.current}${interim ? ` ${interim}` : ''}`.replace(/\s+/g, ' ').trim();
+      setInputValue(live);
+
+      clearSilenceTimer();
+      silenceTimerRef.current = window.setTimeout(() => {
+        stopLiveDictation({ send: true });
+      }, SILENCE_AUTO_SEND_MS);
+    };
+
+    recognition.onerror = (e) => {
+      const code = e?.error || '';
+      if (code === 'not-allowed' || code === 'service-not-allowed') {
+        setSendError('Permita o uso do microfone para ditar.');
+      } else if (code === 'no-speech') {
+        setSendError(null);
+      } else if (code && code !== 'aborted') {
+        setSendError('Não foi possível reconhecer a fala. Tente novamente.');
+      }
+      stopLiveDictation({ send: false });
+    };
+
+    recognition.onend = () => {
+      // Se ainda estamos no modo ditado, finaliza enviando o que tem.
+      if (recognitionRef.current === recognition) {
+        stopLiveDictation({ send: true });
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      stopLiveDictation({ send: false });
+      return false;
+    }
+    recognitionRef.current = recognition;
+    setIsLiveDictating(true);
+    return true;
+  }, [clearSilenceTimer, isLiveDictating, isRecording, isSending, isTranscribing, stopLiveDictation]);
+
   useEffect(() => {
     return () => {
       clearMaxRecordingTimer();
@@ -281,16 +484,34 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
         mediaRecorderRef.current.stop();
       }
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      clearSilenceTimer();
+      const r = recognitionRef.current;
+      if (r) {
+        r.onresult = null;
+        r.onerror = null;
+        r.onend = null;
+        try {
+          r.abort();
+        } catch {
+          /* noop */
+        }
+        recognitionRef.current = null;
+      }
     };
-  }, [clearMaxRecordingTimer]);
+  }, [clearMaxRecordingTimer, clearSilenceTimer]);
 
   const handleComposerMic = () => {
     if (isSending || isTranscribing) return;
+    if (isLiveDictating) {
+      stopLiveDictation({ send: true });
+      return;
+    }
     if (isRecording) {
       void stopRecordingAndTranscribe();
-    } else {
-      void startRecording();
+      return;
     }
+    if (startLiveDictation()) return;
+    void startRecording();
   };
 
   const beginVoiceCall = async () => {
@@ -345,8 +566,8 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
             </div>
           </div>
 
-          <div className="flex-1 flex flex-col items-center justify-center px-5">
-            <div className="relative w-48 h-48 mb-8">
+          <div className="flex-1 flex flex-col items-center justify-center px-5 min-h-0">
+            <div className="relative w-48 h-48 mb-8 shrink-0">
               {/* Ondas de áudio */}
               <div className="absolute inset-0 flex items-center justify-center">
                 {waveMode !== 'idle' && (
@@ -357,6 +578,13 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
                       const x = Math.cos(angle) * distance;
                       const y = Math.sin(angle) * distance;
 
+                      const barColor =
+                        waveMode === 'user-speaking'
+                          ? 'rgb(168, 85, 247)'
+                          : waveMode === 'thinking'
+                            ? 'rgb(245, 158, 11)'
+                            : 'rgb(236, 72, 153)';
+
                       return (
                         <div
                           key={i}
@@ -365,9 +593,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
                             left: `calc(50% + ${x}px)`,
                             top: `calc(50% + ${y}px)`,
                             height: `${Math.sin(i * 0.3) * 20 + 30}px`,
-                            backgroundColor: waveMode === 'user-speaking'
-                              ? 'rgb(168, 85, 247)'
-                              : 'rgb(236, 72, 153)',
+                            backgroundColor: barColor,
                             transform: 'translate(-50%, -50%)',
                             animationDuration: `${0.5 + Math.random() * 0.5}s`,
                             animationDelay: `${i * 0.02}s`,
@@ -382,13 +608,17 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
 
               {/* Avatar central */}
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className={`w-32 h-32 rounded-full flex items-center justify-center text-white shadow-2xl transition-all duration-500 ${
-                  waveMode === 'user-speaking'
-                    ? 'bg-gradient-to-br from-purple-500 to-purple-600 scale-110'
-                    : waveMode === 'kiki-speaking'
-                    ? 'bg-gradient-to-br from-pink-500 to-pink-600 scale-110'
-                    : 'bg-gradient-to-br from-purple-500 to-pink-500'
-                }`}>
+                <div
+                  className={`w-32 h-32 rounded-full flex items-center justify-center text-white shadow-2xl transition-all duration-500 ${
+                    waveMode === 'user-speaking'
+                      ? 'bg-gradient-to-br from-purple-500 to-purple-600 scale-110'
+                      : waveMode === 'thinking'
+                        ? 'bg-gradient-to-br from-amber-500 to-orange-500 scale-110'
+                        : waveMode === 'kiki-speaking'
+                          ? 'bg-gradient-to-br from-pink-500 to-pink-600 scale-110'
+                          : 'bg-gradient-to-br from-purple-500 to-pink-500'
+                  }`}
+                >
                   <Sparkles className="w-16 h-16" />
                 </div>
               </div>
@@ -467,7 +697,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 scrollbar-hide">
+      <div ref={messagesEndContainerRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-3 scrollbar-hide">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -501,7 +731,24 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
                   </span>
                 </p>
               ) : (
-                <p className="text-sm leading-relaxed">{message.text}</p>
+                <p className="text-sm leading-relaxed whitespace-pre-line">
+                  {message.sender === 'kiki' ? (
+                    <TypingText
+                      text={message.text}
+                      animate={message.streamingPhase === 'typing'}
+                      streaming={isSending && message.streamingPhase === 'typing'}
+                      onFinished={() => {
+                        setMessages((prev) =>
+                          prev.map((m) =>
+                            m.id === message.id ? { ...m, streamingPhase: undefined } : m,
+                          ),
+                        );
+                      }}
+                    />
+                  ) : (
+                    message.text
+                  )}
+                </p>
               )}
 
               <p
@@ -525,11 +772,13 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
             {sendError}
           </p>
         )}
-        {(isRecording || isTranscribing) && (
+        {(isRecording || isTranscribing || isLiveDictating) && (
           <p className="text-xs text-muted-foreground mb-2">
             {isTranscribing
               ? 'Transcrevendo…'
-              : 'Gravando… toque no microfone de novo para enviar'}
+              : isLiveDictating
+                ? 'Ouvindo… pare de falar para enviar (ou toque no microfone)'
+                : 'Gravando… toque no microfone de novo para enviar'}
           </p>
         )}
         {showQuickSuggestions && (
@@ -552,12 +801,18 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
           </div>
         )}
 
-        <div className="flex items-center gap-2">
-          <div className="flex-1 flex items-center gap-1.5 bg-muted rounded-full p-1.5">
-            <input
-              type="text"
+        <div className="flex items-end gap-2">
+          <div className="flex-1 flex items-end gap-1.5 bg-muted rounded-2xl p-1.5">
+            <textarea
+              ref={textareaRef}
+              rows={1}
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                const ta = e.target;
+                ta.style.height = 'auto';
+                ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -565,18 +820,21 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
                 }
               }}
               placeholder={
-                isTranscribing
-                  ? 'Transcrevendo…'
-                  : isSending
-                    ? 'Enviando...'
-                    : 'Digite sua mensagem...'
+                isLiveDictating
+                  ? 'Ouvindo…'
+                  : isTranscribing
+                    ? 'Transcrevendo…'
+                    : isSending
+                      ? 'Enviando...'
+                      : 'Digite sua mensagem...'
               }
               disabled={isSending || isTranscribing}
-              className="flex-1 bg-transparent px-3 py-1.5 text-sm outline-none disabled:opacity-50"
+              className="flex-1 bg-transparent px-3 py-1.5 text-sm outline-none disabled:opacity-50 resize-none overflow-y-auto max-h-[120px] leading-relaxed"
+              style={{ height: 'auto' }}
             />
             <button
               onClick={() => void handleSend()}
-              disabled={!inputValue.trim() || isSending || isTranscribing}
+              disabled={!inputValue.trim() || isSending || isTranscribing || isLiveDictating}
               className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white btn-apple-gradient disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Send className="w-4 h-4" />
@@ -588,17 +846,19 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
             onClick={handleComposerMic}
             disabled={isSending || isTranscribing}
             title={
-              isRecording
-                ? 'Parar gravação e enviar (transcrição)'
-                : 'Gravar mensagem de voz (transcreve no chat, sem ligação)'
+              isLiveDictating
+                ? 'Parar de ouvir e enviar'
+                : isRecording
+                  ? 'Parar gravação e enviar (transcrição)'
+                  : 'Falar com a Kiki (transcreve em tempo real)'
             }
             className={`w-12 h-12 rounded-full flex items-center justify-center text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
-              isRecording
+              isRecording || isLiveDictating
                 ? 'bg-red-500 hover:bg-red-600 animate-pulse'
                 : 'bg-muted hover:bg-muted/80'
             }`}
           >
-            {isRecording ? (
+            {isRecording || isLiveDictating ? (
               <Square className="w-5 h-5 text-white fill-current" />
             ) : (
               <Mic className="w-5 h-5 text-foreground" />
@@ -608,7 +868,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
           <button
             type="button"
             onClick={handleStartVoiceCall}
-            disabled={isSending || isRecording || isTranscribing}
+            disabled={isSending || isRecording || isTranscribing || isLiveDictating}
             title="Chamada de voz"
             className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 flex items-center justify-center text-white btn-apple-gradient shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
           >
