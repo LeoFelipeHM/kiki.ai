@@ -14,7 +14,8 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
 
-RUN chmod +x /app/docker-entrypoint.sh \
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh \
+    && chmod +x /app/docker-entrypoint.sh \
     && python livekit_service.py download-files
 
 EXPOSE 8000
