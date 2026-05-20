@@ -279,9 +279,9 @@ function HomePage({ navigateTo }: { navigateTo: (page: Page) => void }) {
             variants={heroItem}
             className="text-3xl sm:text-4xl md:text-6xl lg:text-7xl font-bold mb-4 md:mb-6 tracking-tight text-gray-900 leading-[1.1] px-2"
           >
-            Seu assistente pessoal
+            Eu organizo sua rotina
             <span className="block bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-clip-text text-transparent">
-              inteligente para o dia a dia
+              de forma inteligente
             </span>
           </motion.h1>
 
@@ -289,7 +289,7 @@ function HomePage({ navigateTo }: { navigateTo: (page: Page) => void }) {
             variants={heroItem}
             className="text-base md:text-lg lg:text-xl text-gray-600 mb-8 md:mb-12 max-w-2xl mx-auto leading-relaxed px-4"
           >
-            Kiki aprende com você e ajuda a gerenciar tarefas, eventos e notas de forma natural. Mais produtividade, menos estresse.
+            Olá, eu sou a Kiki. Cuido dos seus compromissos, tarefas e lembretes para deixar seu dia mais leve e organizado.
           </motion.p>
         </motion.div>
       </motion.section>
