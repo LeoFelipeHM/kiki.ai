@@ -1,3 +1,10 @@
 # Secrets — nunca commitar
 backend/.env
 .env
+
+# Dependencias e builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.next/
+frontend/.vite/
