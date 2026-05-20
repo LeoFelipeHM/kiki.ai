@@ -272,15 +272,15 @@ function HomePage({ navigateTo }: { navigateTo: (page: Page) => void }) {
             className="inline-flex items-center gap-2 px-3 md:px-4 py-1.5 bg-purple-50 rounded-full mb-4 md:mb-6"
           >
             <Star className="w-3.5 h-3.5 md:w-4 md:h-4 text-purple-600" />
-            <span className="text-xs md:text-sm font-medium text-purple-900">Organize sua vida com IA</span>
+            <span className="text-xs md:text-sm font-medium text-purple-900">Menos caos, mais clareza</span>
           </motion.div>
 
           <motion.h1
             variants={heroItem}
-            className="text-3xl sm:text-4xl md:text-6xl lg:text-7xl font-bold mb-4 md:mb-6 tracking-tight text-gray-900 leading-[1.1] px-2"
+            className="text-[18px] sm:text-2xl md:text-[32px] lg:text-[40px] font-bold mb-4 md:mb-6 tracking-tight text-gray-900 leading-[1.22] px-2 overflow-visible"
           >
-            Eu organizo sua rotina
-            <span className="block bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-clip-text text-transparent">
+            <span className="block whitespace-nowrap">Eu organizo sua rotina</span>
+            <span className="block pb-3 bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-clip-text text-transparent leading-[1.22]">
               de forma inteligente
             </span>
           </motion.h1>
