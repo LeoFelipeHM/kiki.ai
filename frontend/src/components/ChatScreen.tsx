@@ -1,5 +1,6 @@
-import { Send, Sparkles, Calendar, Clock, CheckCircle2, ListTodo, Mic, MicOff, Menu, X, Phone, Square } from 'lucide-react';
+import { Send, Sparkles, Calendar, Clock, CheckCircle2, ListTodo, Mic, MicOff, Menu, X, Phone, Square, Camera, SwitchCamera } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useLiveKitCameraFrames } from '@/hooks/useLiveKitCameraFrames';
 import { useLiveKitVoiceRoom } from '@/hooks/useLiveKitVoiceRoom';
 import { voiceCenterPrimary, voiceCenterSecondary, voiceOverlayCaption } from '@/lib/voiceUiCaptions';
 import { streamChat, type ChatApiMessage } from '@/services/chat';
@@ -106,7 +107,6 @@ function TypingText({ text, animate, streaming, onFinished }: {
 }
 
 const MAX_RECORDING_MS = 120_000;
-
 export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, userName = 'Maria Silva' }: ChatScreenProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -127,6 +127,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
   const [isLiveDictating, setIsLiveDictating] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const voice = useLiveKitVoiceRoom();
+  const camera = useLiveKitCameraFrames(voice.publishCameraFrame);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingChunksRef = useRef<BlobPart[]>([]);
@@ -529,6 +530,10 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
 
   const handleVoiceCallToggleMic = () => void voice.toggleMicrophone();
 
+  useEffect(() => {
+    if (!isVoiceCallActive) camera.stopCamera();
+  }, [isVoiceCallActive, camera]);
+
   // Voice Call Interface
   if (isVoiceCallActive) {
     return (
@@ -567,6 +572,17 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
           </div>
 
           <div className="flex-1 flex flex-col items-center justify-center px-5 min-h-0">
+            {camera.isCameraActive ? (
+              <div className="relative mb-6 aspect-[3/4] w-full max-w-[340px] overflow-hidden rounded-[2rem] bg-black shadow-2xl">
+                <video
+                  ref={camera.videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className={`h-full w-full object-cover ${camera.cameraFacingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+                />
+              </div>
+            ) : (
             <div className="relative w-48 h-48 mb-8 shrink-0">
               {/* Ondas de áudio */}
               <div className="absolute inset-0 flex items-center justify-center">
@@ -623,13 +639,43 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
                 </div>
               </div>
             </div>
+            )}
 
             <div className="text-center mb-8">
               <p className="text-lg font-medium mb-1">{voiceCenterPrimary(voice)}</p>
               <p className="text-sm text-muted-foreground">{voiceCenterSecondary(voice)}</p>
+              {camera.cameraError && <p className="mt-2 text-xs text-destructive">{camera.cameraError}</p>}
             </div>
 
             <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={camera.toggleCamera}
+                disabled={voice.phase !== 'connected'}
+                title={camera.isCameraActive ? 'Desligar câmera' : 'Ligar câmera'}
+                className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${
+                  camera.isCameraActive
+                    ? 'bg-emerald-500 hover:bg-emerald-600 hover:scale-110'
+                    : voice.phase === 'connected'
+                      ? 'bg-muted hover:bg-muted/80 hover:scale-110'
+                      : 'bg-gray-300 cursor-not-allowed'
+                }`}
+              >
+                <Camera className={`w-7 h-7 ${camera.isCameraActive ? 'text-white' : 'text-foreground'}`} />
+              </button>
+
+              {camera.isCameraActive && (
+                <button
+                  type="button"
+                  onClick={() => void camera.switchCamera()}
+                  disabled={camera.isCameraStarting}
+                  title="Virar câmera"
+                  className="w-16 h-16 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center transition-all shadow-lg hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <SwitchCamera className="w-7 h-7 text-foreground" />
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={handleVoiceCallToggleMic}
@@ -657,6 +703,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
             </div>
           </div>
         </div>
+        <canvas ref={camera.canvasRef} className="hidden" aria-hidden />
 
       </>
     );

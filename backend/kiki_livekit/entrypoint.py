@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import re
+import json
+import logging
 from typing import Any
 
 from dotenv import load_dotenv
@@ -27,6 +29,9 @@ from .tts import build_tts
 load_dotenv()
 
 AGENT_NAME = os.getenv("KIKI_VOICE_AGENT_NAME", "kiki-voice").strip() or "kiki-voice"
+CAMERA_FRAME_TOPIC = "kiki.camera.frame"
+MAX_CAMERA_FRAME_DATA_URL_CHARS = 20_000
+log = logging.getLogger("kiki.livekit")
 
 _ROOM_PREFIX_RE = re.compile(r"^kiki-(?P<uid>.+)-[0-9a-f]{12}$", re.IGNORECASE)
 
@@ -95,6 +100,7 @@ class KikiVoiceAssistant(Agent):
         self._user_timezone = user_timezone
         self._database_url = database_url
         self._active_note: dict[str, Any] | None = None
+        self._latest_camera_frame: dict[str, str] | None = None
         super().__init__(
             instructions="""Você é a Kiki, assistente pessoal por voz no Brasil.
 Responda em português do Brasil, em frases curtas e naturais para conversa falada.
@@ -141,26 +147,64 @@ Formatação para fala (muito importante):
             self._active_note = None
 
     def voice_session_context(self) -> str | None:
-        if not self._active_note:
+        parts: list[str] = []
+
+        if self._active_note:
+            title = self._active_note.get("title") or "(sem título)"
+            content = str(self._active_note.get("content") or "")
+            if len(content) > 2000:
+                content = content[:2000].rstrip() + "... [conteúdo truncado]"
+            tags = ", ".join(str(t) for t in self._active_note.get("tags") or [])
+
+            parts.append(
+                "Nota ativa nesta sessão de voz:\n"
+                f"- note_id: {self._active_note['id']}\n"
+                f"- título: {title}\n"
+                f"- conteúdo atual: {content or '(vazio)'}\n"
+                f"- tags: {tags or '(nenhuma)'}\n\n"
+                "Se o usuário pedir para alterar, corrigir, completar, acrescentar ou remover algo de "
+                "\"essa nota\", \"ela\", \"a nota\" ou da nota recém-criada sem identificar outra nota, "
+                "use notes_update_note com esse note_id. Não use notes_create_note para alterações da nota ativa. "
+                "Só crie uma nova nota quando o usuário pedir explicitamente uma nova nota."
+            )
+
+        if self._latest_camera_frame:
+            parts.append(
+                "A mensagem mais recente do usuário pode ter uma imagem da câmera anexada. "
+                "Use essa imagem como contexto visual atual quando o pedido do usuário depender do que ele está mostrando."
+            )
+
+        return "\n\n".join(parts) if parts else None
+
+    def remember_camera_frame(self, data_packet: Any) -> None:
+        if getattr(data_packet, "topic", None) != CAMERA_FRAME_TOPIC:
+            return
+        try:
+            payload = json.loads(data_packet.data.decode("utf-8"))
+        except Exception:
+            log.debug("camera frame ignored: invalid json")
+            return
+
+        if not isinstance(payload, dict) or payload.get("type") != "camera_frame":
+            return
+
+        image = str(payload.get("image") or "").strip()
+        if not image.startswith("data:image/jpeg;base64,"):
+            return
+        if len(image) > MAX_CAMERA_FRAME_DATA_URL_CHARS:
+            log.debug("camera frame ignored: payload too large")
+            return
+
+        self._latest_camera_frame = {
+            "image": image,
+            "captured_at": str(payload.get("capturedAt") or ""),
+            "facing_mode": str(payload.get("facingMode") or ""),
+        }
+
+    def latest_camera_image_data_url(self) -> str | None:
+        if not self._latest_camera_frame:
             return None
-
-        title = self._active_note.get("title") or "(sem título)"
-        content = str(self._active_note.get("content") or "")
-        if len(content) > 2000:
-            content = content[:2000].rstrip() + "... [conteúdo truncado]"
-        tags = ", ".join(str(t) for t in self._active_note.get("tags") or [])
-
-        return (
-            "Nota ativa nesta sessão de voz:\n"
-            f"- note_id: {self._active_note['id']}\n"
-            f"- título: {title}\n"
-            f"- conteúdo atual: {content or '(vazio)'}\n"
-            f"- tags: {tags or '(nenhuma)'}\n\n"
-            "Se o usuário pedir para alterar, corrigir, completar, acrescentar ou remover algo de "
-            "\"essa nota\", \"ela\", \"a nota\" ou da nota recém-criada sem identificar outra nota, "
-            "use notes_update_note com esse note_id. Não use notes_create_note para alterações da nota ativa. "
-            "Só crie uma nova nota quando o usuário pedir explicitamente uma nova nota."
-        )
+        return self._latest_camera_frame.get("image")
 
     async def llm_node(
         self,
@@ -207,6 +251,7 @@ Formatação para fala (muito importante):
                 notes_service=notes_service,
                 contacts_service=contacts_service,
                 additional_system_context=self.voice_session_context(),
+                latest_input_image_data_url=self.latest_camera_image_data_url(),
             )
 
         return reply
@@ -242,9 +287,15 @@ async def kiki_voice_entrypoint(ctx: JobContext) -> None:
         ),
     )
 
+    assistant = KikiVoiceAssistant(user_id=user_id, user_timezone=user_timezone, database_url=database_url)
+
+    @ctx.room.on("data_received")
+    def _on_data_received(data_packet: Any) -> None:
+        assistant.remember_camera_frame(data_packet)
+
     await session.start(
         room=ctx.room,
-        agent=KikiVoiceAssistant(user_id=user_id, user_timezone=user_timezone, database_url=database_url),
+        agent=assistant,
         # Texto no cliente assim que o modelo/TTS geram (menos espera alinhando áudio).
         room_options=room_io.RoomOptions(
             text_output=room_io.TextOutputOptions(sync_transcription=False),
@@ -257,4 +308,3 @@ async def kiki_voice_entrypoint(ctx: JobContext) -> None:
 
 def run_cli() -> None:
     agents.cli.run_app(server)
-

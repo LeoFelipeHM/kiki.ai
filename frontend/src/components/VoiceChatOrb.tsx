@@ -1,12 +1,14 @@
-import { Mic, MicOff, X, Sparkles } from 'lucide-react';
+import { Camera, Mic, MicOff, SwitchCamera, X, Sparkles } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useTheme } from './ThemeProvider';
+import { useLiveKitCameraFrames } from '@/hooks/useLiveKitCameraFrames';
 import { useLiveKitVoiceRoom } from '@/hooks/useLiveKitVoiceRoom';
 import { voiceCenterPrimary, voiceCenterSecondary, voiceOverlayCaption } from '@/lib/voiceUiCaptions';
 
 export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode }) {
   const { themeColor } = useTheme();
   const voice = useLiveKitVoiceRoom();
+  const camera = useLiveKitCameraFrames(voice.publishCameraFrame);
   const [isCallActive, setIsCallActive] = useState(false);
 
   const voiceDisconnectRef = useRef(voice.disconnect);
@@ -27,9 +29,14 @@ export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode })
   };
 
   const handleEndCall = async () => {
+    camera.stopCamera();
     await voice.disconnect();
     setIsCallActive(false);
   };
+
+  useEffect(() => {
+    if (!isCallActive) camera.stopCamera();
+  }, [isCallActive, camera]);
 
   if (isCallActive) {
     return (
@@ -41,6 +48,17 @@ export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode })
         />
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-80 bg-background rounded-3xl shadow-2xl z-50 max-w-md mx-auto border border-border">
           <div className="flex flex-col items-center justify-center px-6 py-8">
+            {camera.isCameraActive ? (
+              <div className="relative mb-6 aspect-[3/4] w-full max-w-[220px] overflow-hidden rounded-[1.5rem] bg-black shadow-xl">
+                <video
+                  ref={camera.videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className={`h-full w-full object-cover ${camera.cameraFacingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+                />
+              </div>
+            ) : (
             <div className="relative w-32 h-32 mb-8">
               <div className="absolute inset-0 flex items-center justify-center">
                 {waveMode !== 'idle' && (
@@ -95,14 +113,50 @@ export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode })
                 </div>
               </div>
             </div>
+            )}
 
             <div className="text-center mb-8 min-h-[80px] max-w-[280px]">
               <p className="text-xs text-muted-foreground mb-2">{voiceOverlayCaption(voice)}</p>
               <p className="text-sm font-medium text-foreground">{voiceCenterPrimary(voice)}</p>
               <p className="text-xs text-muted-foreground mt-1">{voiceCenterSecondary(voice)}</p>
+              {camera.cameraError && <p className="mt-2 text-xs text-destructive">{camera.cameraError}</p>}
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-wrap justify-center gap-3">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  camera.toggleCamera();
+                }}
+                disabled={voice.phase !== 'connected'}
+                title={camera.isCameraActive ? 'Desligar câmera' : 'Ligar câmera'}
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg ${
+                  camera.isCameraActive
+                    ? 'bg-emerald-500 hover:bg-emerald-600 hover:scale-110'
+                    : voice.phase === 'connected'
+                      ? 'bg-muted hover:bg-muted/80 hover:scale-110'
+                      : 'bg-gray-300 cursor-not-allowed'
+                }`}
+              >
+                <Camera className={`w-6 h-6 ${camera.isCameraActive ? 'text-white' : 'text-foreground'}`} />
+              </button>
+
+              {camera.isCameraActive && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void camera.switchCamera();
+                  }}
+                  disabled={camera.isCameraStarting}
+                  title="Virar câmera"
+                  className="w-14 h-14 rounded-full bg-muted hover:bg-muted/80 flex items-center justify-center transition-all shadow-lg hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <SwitchCamera className="w-6 h-6 text-foreground" />
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={(e) => {
@@ -110,16 +164,16 @@ export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode })
                   void voice.toggleMicrophone();
                 }}
                 disabled={voice.phase !== 'connected'}
-                className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg ${
                   voice.phase === 'connected'
                     ? `bg-gradient-to-br ${themeColor} hover:scale-110`
                     : 'bg-gray-300 cursor-not-allowed'
                 }`}
               >
                 {voice.micEnabled ? (
-                  <Mic className="w-6 h-6 text-white" />
+                  <Mic className="w-5 h-5 text-white" />
                 ) : (
-                  <MicOff className="w-6 h-6 text-white" />
+                  <MicOff className="w-5 h-5 text-white" />
                 )}
               </button>
 
@@ -129,13 +183,14 @@ export function VoiceChatOrb({ leftActions }: { leftActions?: React.ReactNode })
                   e.stopPropagation();
                   void handleEndCall();
                 }}
-                className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-all shadow-lg hover:scale-110"
+                className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-all shadow-lg hover:scale-110"
               >
-                <X className="w-6 h-6 text-white" />
+                <X className="w-5 h-5 text-white" />
               </button>
             </div>
           </div>
         </div>
+        <canvas ref={camera.canvasRef} className="hidden" aria-hidden />
       </>
     );
   }

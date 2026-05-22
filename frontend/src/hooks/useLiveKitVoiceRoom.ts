@@ -12,6 +12,7 @@ export type VoiceTurnVisual = 'idle' | 'user-speaking' | 'thinking' | 'kiki-spea
 export type LkAgentState = 'idle' | 'initializing' | 'listening' | 'thinking' | 'speaking';
 
 const TRANSCRIPTION_TOPIC = 'lk.transcription';
+const CAMERA_FRAME_TOPIC = 'kiki.camera.frame';
 
 function parseAgentState(attrs: Readonly<Record<string, string>>): LkAgentState | null {
   const v = attrs['lk.agent.state'];
@@ -121,9 +122,9 @@ export function useLiveKitVoiceRoom() {
     setUserTranscript('');
     setAgentTranscript('');
 
-    let room: Room | undefined;
+    let pendingRoom: Room | null = null;
     try {
-      room = new Room({
+      const room = new Room({
         adaptiveStream: true,
         dynacast: true,
         audioCaptureDefaults: {
@@ -132,6 +133,7 @@ export function useLiveKitVoiceRoom() {
           autoGainControl: true,
         },
       });
+      pendingRoom = room;
 
       /**
        * Políticas de autoplay: em alguns browsers, `startAudio()` precisa acontecer dentro
@@ -157,10 +159,16 @@ export function useLiveKitVoiceRoom() {
         refreshSpeakingHint(room);
       };
 
+      const onParticipantConnected = (p: Participant) => onParticipantOrAttributes(p);
+      const onParticipantAttributesChanged = (
+        _changed: Record<string, string>,
+        p: Participant,
+      ) => onParticipantOrAttributes(p);
+
       room.on(RoomEvent.ActiveSpeakersChanged, onActiveSpeakersChanged);
 
-      room.on(RoomEvent.ParticipantConnected, (p) => onParticipantOrAttributes(p));
-      room.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => onParticipantOrAttributes(p));
+      room.on(RoomEvent.ParticipantConnected, onParticipantConnected);
+      room.on(RoomEvent.ParticipantAttributesChanged, onParticipantAttributesChanged);
 
       room.registerTextStreamHandler(TRANSCRIPTION_TOPIC, async (reader, participantInfo) => {
         const r = roomRef.current;
@@ -217,7 +225,7 @@ export function useLiveKitVoiceRoom() {
         if (!remoteAudioElsRef.current.has(key)) {
           const el = document.createElement('audio');
           el.autoplay = true;
-          el.playsInline = true;
+          el.setAttribute('playsinline', 'true');
           el.controls = false;
           el.muted = false;
           el.style.position = 'fixed';
@@ -266,8 +274,8 @@ export function useLiveKitVoiceRoom() {
         room.off(RoomEvent.ConnectionStateChanged, onConnectionStateChanged);
         room.off(RoomEvent.TrackSubscribed, onRemoteAudioTrack);
         room.off(RoomEvent.TrackUnsubscribed, onRemoteTrackUnsubscribed);
-        room.off(RoomEvent.ParticipantConnected, onParticipantOrAttributes);
-        room.off(RoomEvent.ParticipantAttributesChanged, onParticipantOrAttributes);
+        room.off(RoomEvent.ParticipantConnected, onParticipantConnected);
+        room.off(RoomEvent.ParticipantAttributesChanged, onParticipantAttributesChanged);
         room.unregisterTextStreamHandler(TRANSCRIPTION_TOPIC);
       };
       room.on(RoomEvent.TrackUnsubscribed, onRemoteTrackUnsubscribed);
@@ -288,8 +296,8 @@ export function useLiveKitVoiceRoom() {
       playbackUnlockCleanupRef.current?.();
       playbackUnlockCleanupRef.current = null;
       cleanupRemoteAudio();
-      if (room) {
-        await room.disconnect().catch(() => {});
+      if (pendingRoom) {
+        await pendingRoom.disconnect().catch(() => {});
       }
       roomRef.current = null;
       setPhase('error');
@@ -307,10 +315,28 @@ export function useLiveKitVoiceRoom() {
     setMicEnabled(!cur);
   }, []);
 
+  const publishCameraFrame = useCallback(async (dataUrl: string, facingMode: 'user' | 'environment') => {
+    const room = roomRef.current;
+    if (!room || phase !== 'connected') return false;
+    const payload = {
+      type: 'camera_frame',
+      image: dataUrl,
+      mimeType: 'image/jpeg',
+      facingMode,
+      capturedAt: new Date().toISOString(),
+    };
+    await room.localParticipant.publishData(
+      new TextEncoder().encode(JSON.stringify(payload)),
+      { reliable: true, topic: CAMERA_FRAME_TOPIC },
+    );
+    return true;
+  }, [phase]);
+
   return {
     connect,
     disconnect,
     toggleMicrophone,
+    publishCameraFrame,
     phase,
     turnVisual,
     agentState,
