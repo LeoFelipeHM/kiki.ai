@@ -34,7 +34,7 @@ function AppRoutes() {
     phone: '+55 (11) 98765-4321',
     birthdate: '15 de Março, 1995',
     language: 'Português (Brasil)',
-    timezone: 'GMT-3 (Brasília)',
+    timezone: 'America/Sao_Paulo',
   });
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);

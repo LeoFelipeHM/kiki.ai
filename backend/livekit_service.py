@@ -13,7 +13,11 @@ Outras variáveis (ex.: backend/.env):
   LIVEKIT_API_SECRET     API Secret do projeto LiveKit Cloud
                           (Inference LLM usa o mesmo par para o gateway LiveKit)
 
-  ASSEMBLYAI_API_KEY     Chave AssemblyAI para o plugin STT
+  KIKI_VOICE_MODE        Opcional: classic (default) ou openai_realtime
+  OPENAI_REALTIME_MODEL  Opcional; default: gpt-realtime-mini (modo openai_realtime)
+  OPENAI_REALTIME_VOICE  Opcional; default: marin (modo openai_realtime)
+  OPENAI_REALTIME_SPEED  Opcional; default: 1.0 (modo openai_realtime)
+  ASSEMBLYAI_API_KEY     Chave AssemblyAI para o plugin STT (modo classic)
 
   AZURE_VOICE_NAME       Opcional; alias de AZURE_TTS_VOICE se esta não estiver definida
   AZURE_TTS_SAMPLE_RATE  Opcional; default 16000 (PCM raw); use 24000 se preferir

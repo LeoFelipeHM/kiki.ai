@@ -7,6 +7,7 @@ from typing import Any, cast
 
 from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
+from llm.model_policy import coerce_multimodal_openai_model
 from llm.prompts.kiki_system import build_kiki_system_instructions
 from llm.sanitize import sanitize_reply
 from llm.tools.dispatcher import execute_tool_call
@@ -28,12 +29,13 @@ def _client(api_key: str | None) -> OpenAI:
 
 
 def _responses_model(model: str | None) -> str:
-    return (
+    configured = (
         model
         or os.getenv("OPENAI_RESPONSES_MODEL", "").strip()
         or os.getenv("OPENAI_CHAT_MODEL", "").strip()
         or DEFAULT_MODEL
     ).strip()
+    return coerce_multimodal_openai_model(configured, DEFAULT_MODEL)
 
 
 def _web_search_tool(user_timezone: str | None) -> dict[str, Any]:

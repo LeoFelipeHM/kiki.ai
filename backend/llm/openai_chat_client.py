@@ -7,6 +7,7 @@ from typing import Any
 
 from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
+from llm.model_policy import coerce_multimodal_openai_model
 from llm.prompts.kiki_system import KIKI_SYSTEM_PROMPT
 from llm.sanitize import sanitize_reply
 from llm.tools.agent import ToolAgentError, run_tool_agent, run_tool_agent_stream
@@ -123,7 +124,10 @@ def generate_reply(
 ) -> str:
     """Próxima mensagem do assistente (Chat Completions, texto)."""
     client = _client(api_key)
-    mdl = (model or os.getenv("OPENAI_CHAT_MODEL") or DEFAULT_MODEL).strip()
+    mdl = coerce_multimodal_openai_model(
+        (model or os.getenv("OPENAI_CHAT_MODEL") or DEFAULT_MODEL).strip(),
+        DEFAULT_MODEL,
+    )
 
     oa_messages: list[dict[str, str]] = [{"role": "system", "content": KIKI_SYSTEM_PROMPT}]
     for role, text in messages:
@@ -154,7 +158,10 @@ def generate_reply_stream(
 ) -> Iterator[str]:
     """Trechos de texto conforme o modelo gera (streaming SSE no router)."""
     client = _client(api_key)
-    mdl = (model or os.getenv("OPENAI_CHAT_MODEL") or DEFAULT_MODEL).strip()
+    mdl = coerce_multimodal_openai_model(
+        (model or os.getenv("OPENAI_CHAT_MODEL") or DEFAULT_MODEL).strip(),
+        DEFAULT_MODEL,
+    )
 
     oa_messages: list[dict[str, str]] = [{"role": "system", "content": KIKI_SYSTEM_PROMPT}]
     for role, text in messages:

@@ -12,6 +12,7 @@ from domain.calendar import RecurrenceValidationError, ScheduleConflictError
 from llm.tools.schemas import ToolName
 
 log = logging.getLogger("kiki.llm.tools")
+DEFAULT_USER_TIMEZONE = "America/Sao_Paulo"
 
 
 def _tool_error(message: str) -> dict[str, Any]:
@@ -28,13 +29,14 @@ def _parse_iso_dt(value: str, user_timezone: str | None) -> datetime:
     except ValueError as exc:
         raise ValueError("Data/hora inválida (use ISO 8601).") from exc
     if dt.tzinfo is None:
-        tz = ZoneInfo(user_timezone) if user_timezone else datetime.now().astimezone().tzinfo
+        tz = ZoneInfo(user_timezone or DEFAULT_USER_TIMEZONE)
         dt = dt.replace(tzinfo=tz)
     return dt
 
 
 def _current_week_range_local(now: datetime | None = None) -> tuple[datetime, datetime]:
-    cur = (now or datetime.now().astimezone()).astimezone()
+    tz = ZoneInfo(DEFAULT_USER_TIMEZONE)
+    cur = (now or datetime.now(tz)).astimezone(tz)
     monday = (cur - timedelta(days=cur.weekday())).date()
     start = datetime.combine(monday, time.min, tzinfo=cur.tzinfo)
     end = start + timedelta(days=7)
@@ -43,10 +45,10 @@ def _current_week_range_local(now: datetime | None = None) -> tuple[datetime, da
 
 def _format_dt_for_user(dt: datetime, user_timezone: str | None) -> str:
     try:
-        tz = ZoneInfo(user_timezone) if user_timezone else None
+        tz = ZoneInfo(user_timezone or DEFAULT_USER_TIMEZONE)
     except Exception:
-        tz = None
-    local = dt.astimezone(tz) if tz else dt.astimezone()
+        tz = ZoneInfo(DEFAULT_USER_TIMEZONE)
+    local = dt.astimezone(tz)
     return local.strftime("%d/%m %H:%M")
 
 
@@ -435,4 +437,3 @@ def execute_tool_call(
         if "could not connect" in low or "connection refused" in low:
             return _tool_error("Não consegui salvar agora porque não consegui conectar ao banco (serviço offline).")
         return _tool_error(msg)
-
