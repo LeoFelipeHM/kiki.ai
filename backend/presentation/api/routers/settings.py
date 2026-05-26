@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from application.settings_service import SettingsService
 from presentation.api.dependencies import CurrentUserDep, get_settings_service
+from presentation.api.routers.voice_livekit import invalidate_voice_bootstrap_cache
 from presentation.api.schemas.settings import (
     IntegrationConnectionResponse,
     IntegrationStatusPatch,
@@ -48,6 +49,8 @@ def patch_ui(
             theme_mode=payload.theme_mode,
             assistant_voice=payload.assistant_voice,
         )
+        if payload.assistant_voice is not None:
+            invalidate_voice_bootstrap_cache(str(current_user["id"]))
         return UiPrefs(**row)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

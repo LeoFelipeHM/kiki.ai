@@ -76,7 +76,7 @@ export function EditProfileField({ field, currentValue, onNavigateBack, onSave }
                   </>
                 ) : (
                   <>
-                    <option value="GMT-3 (Brasília)">GMT-3 (Brasília)</option>
+                    <option value="America/Sao_Paulo">America/Sao_Paulo</option>
                     <option value="GMT-5 (New York)">GMT-5 (New York)</option>
                     <option value="GMT+0 (London)">GMT+0 (London)</option>
                     <option value="GMT+1 (Paris)">GMT+1 (Paris)</option>

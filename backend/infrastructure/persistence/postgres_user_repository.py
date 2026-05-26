@@ -116,7 +116,7 @@ class PostgresUserRepository:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, name, email, role, is_active
+                SELECT id, name, email, role, is_active, timezone, assistant_voice
                 FROM users
                 WHERE id = %s
                 """,

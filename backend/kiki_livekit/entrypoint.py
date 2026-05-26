@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import os
 import re
+import json
+import logging
+import time
 from typing import Any
 
 from dotenv import load_dotenv
@@ -10,6 +13,7 @@ import psycopg
 from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, TurnHandlingOptions, llm, room_io
 from livekit.plugins import silero
+from livekit.plugins.openai import realtime
 from psycopg.rows import dict_row
 
 from application.azure_voice_ids import AZURE_PT_BR_VOICE_IDS_FROZEN
@@ -20,15 +24,29 @@ from infrastructure.persistence.postgres_calendar_repository import PostgresCale
 from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
 from llm.openai_chat_client import generate_reply_with_tools
+from llm.prompts.kiki_system import KIKI_SYSTEM_PROMPT
+from .config import VoiceRuntimeConfig, load_voice_runtime_config
 from .llm import build_llm
 from .stt import build_stt
 from .tts import build_tts
+from .tools import build_livekit_tools
 
 load_dotenv()
 
 AGENT_NAME = os.getenv("KIKI_VOICE_AGENT_NAME", "kiki-voice").strip() or "kiki-voice"
+CAMERA_FRAME_TOPIC = "kiki.camera.frame"
+MAX_CAMERA_FRAME_DATA_URL_CHARS = 20_000
+MAX_CAMERA_FRAME_AGE_SECONDS = 10.0
+log = logging.getLogger("kiki.livekit")
 
 _ROOM_PREFIX_RE = re.compile(r"^kiki-(?P<uid>.+)-[0-9a-f]{12}$", re.IGNORECASE)
+
+KIKI_VOICE_VIDEO_CONTEXT = (
+    "No modo de voz, quando a câmera estiver ligada, você pode ver o vídeo do usuário "
+    "em tempo real por frames recentes. Use esse contexto visual somente quando houver "
+    "imagem recebida na sessão."
+)
+KIKI_VOICE_INSTRUCTIONS = f"{KIKI_SYSTEM_PROMPT}\n\n{KIKI_VOICE_VIDEO_CONTEXT}"
 
 
 def _user_id_from_room_name(room_name: str) -> str | None:
@@ -60,6 +78,46 @@ def _fetch_user_assistant_voice(database_url: str, user_id: str) -> str | None:
     return str(v).strip() if v else None
 
 
+def _metadata_from_job(ctx: JobContext) -> dict[str, Any]:
+    raw = str(getattr(ctx.job, "metadata", "") or "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _voice_from_openai_env(config: VoiceRuntimeConfig) -> str:
+    return config.openai_realtime_voice
+
+
+def build_agent_session(
+    *,
+    config: VoiceRuntimeConfig,
+    voice_override: str | None = None,
+) -> AgentSession:
+    if config.mode == "openai_realtime":
+        model = realtime.RealtimeModel(
+            model=config.openai_realtime_model,
+            voice=_voice_from_openai_env(config),
+            speed=config.openai_realtime_speed,
+        )
+        return AgentSession(llm=model)
+
+    return AgentSession(
+        stt=build_stt(),
+        llm=build_llm(),
+        tts=build_tts(voice_override=voice_override),
+        vad=silero.VAD.load(activation_threshold=0.3),
+        turn_handling=TurnHandlingOptions(
+            turn_detection="stt",
+            endpointing={"min_delay": 0},
+        ),
+    )
+
+
 class _VoiceSessionNotesService:
     def __init__(self, inner: NotesService, assistant: "KikiVoiceAssistant") -> None:
         self._inner = inner
@@ -89,40 +147,22 @@ class _VoiceSessionNotesService:
         return ok
 
 
-class KikiVoiceAssistant(Agent):
-    def __init__(self, *, user_id: str, user_timezone: str, database_url: str) -> None:
+class BaseKikiVoiceAssistant(Agent):
+    def __init__(
+        self,
+        *,
+        user_id: str,
+        user_timezone: str,
+        database_url: str,
+        tools: list[Any] | None = None,
+    ) -> None:
         self._user_id = user_id
         self._user_timezone = user_timezone
         self._database_url = database_url
         self._active_note: dict[str, Any] | None = None
-        super().__init__(
-            instructions="""Você é a Kiki, assistente pessoal por voz no Brasil.
-Responda em português do Brasil, em frases curtas e naturais para conversa falada.
-Não use markdown, listas numeradas, emojis ou símbolos estranhos.
-Seja cordial, objetiva e útil.
-
-Você tem acesso ao calendário, às notas e aos contatos do usuário autenticado do app Kiki por meio de ferramentas internas.
-Não invente compromissos, horários, contatos nem e-mails; consulte quando precisar.
-
-Para fatos públicos ou atualizados (notícias, clima, preços), você pode usar busca na web; para agenda, notas e contatos do usuário, use sempre as ferramentas internas.
-Quando a resposta vier da web, fale só o conteúdo verificado em palavras — nunca leia links, URLs ou nomes de sites em voz alta.
-
-Notas (importante):
-- Você pode criar, editar e excluir notas quando o usuário pedir.
-- Se faltar informação (ex.: título, conteúdo, qual nota alterar), faça uma pergunta curta para completar antes de executar.
-
-Contatos (importante):
-- Você pode criar, editar e excluir contatos quando o usuário pedir.
-- Contato exige nome e e-mail. Se o usuário não der o e-mail, pergunte antes de criar.
-- Soletre e-mails com calma quando precisar confirmar com o usuário, mas nunca leia "arroba", "ponto" como símbolos: prefira ditar de forma natural, por exemplo "joana ponto silva arroba gmail ponto com".
-- Antes de excluir, confirme com o usuário.
-
-Formatação para fala (muito importante):
-- Nunca leia datas/horas em formato técnico com barras ou hífens (ex.: "09/09/12", "2026-05-09", "09:30").
-- Converta para formato falado: "9 de setembro de 2012", "9 de maio de 2026", "nove e meia", "nove horas e trinta".
-- Prefira números simples e naturais na fala. Se necessário, diga por extenso (ex.: "dezesseis" em vez de "16").
-- Ao citar intervalos, fale "das X às Y" e inclua o dia quando necessário.""",
-        )
+        self._latest_camera_frame: dict[str, Any] | None = None
+        self._camera_frame_count = 0
+        super().__init__(instructions=KIKI_VOICE_INSTRUCTIONS, tools=tools)
 
     def remember_active_note(self, row: dict[str, Any]) -> None:
         note_id = str(row.get("id") or "").strip()
@@ -141,27 +181,94 @@ Formatação para fala (muito importante):
             self._active_note = None
 
     def voice_session_context(self) -> str | None:
-        if not self._active_note:
+        parts: list[str] = []
+
+        if self._active_note:
+            title = self._active_note.get("title") or "(sem título)"
+            content = str(self._active_note.get("content") or "")
+            if len(content) > 2000:
+                content = content[:2000].rstrip() + "... [conteúdo truncado]"
+            tags = ", ".join(str(t) for t in self._active_note.get("tags") or [])
+
+            parts.append(
+                "Nota ativa nesta sessão de voz:\n"
+                f"- note_id: {self._active_note['id']}\n"
+                f"- título: {title}\n"
+                f"- conteúdo atual: {content or '(vazio)'}\n"
+                f"- tags: {tags or '(nenhuma)'}\n\n"
+                "Se o usuário pedir para alterar, corrigir, completar, acrescentar ou remover algo de "
+                "\"essa nota\", \"ela\", \"a nota\" ou da nota recém-criada sem identificar outra nota, "
+                "use notes_update_note com esse note_id. Não use notes_create_note para alterações da nota ativa. "
+                "Só crie uma nova nota quando o usuário pedir explicitamente uma nova nota."
+            )
+
+        if self.has_recent_camera_frame():
+            captured_at = self._latest_camera_frame.get("captured_at") or ""
+            facing_mode = self._latest_camera_frame.get("facing_mode") or ""
+            parts.append(
+                "Câmera do usuário ativa nesta sessão de voz:\n"
+                f"- frame mais recente recebido em: {captured_at or '(não informado)'}\n"
+                f"- câmera: {facing_mode or '(não informado)'}\n\n"
+                "A mensagem mais recente do usuário tem uma imagem da câmera anexada. "
+                "Use essa imagem como contexto visual atual em tempo real quando o pedido depender do que ele está mostrando."
+            )
+
+        return "\n\n".join(parts) if parts else None
+
+    def remember_camera_frame(self, data_packet: Any) -> None:
+        if getattr(data_packet, "topic", None) != CAMERA_FRAME_TOPIC:
+            return
+        try:
+            payload = json.loads(data_packet.data.decode("utf-8"))
+        except Exception:
+            log.debug("camera frame ignored: invalid json")
+            return
+
+        if not isinstance(payload, dict) or payload.get("type") != "camera_frame":
+            return
+
+        image = str(payload.get("image") or "").strip()
+        if not image.startswith("data:image/jpeg;base64,"):
+            return
+        if len(image) > MAX_CAMERA_FRAME_DATA_URL_CHARS:
+            log.debug("camera frame ignored: payload too large")
+            return
+
+        self._latest_camera_frame = {
+            "image": image,
+            "captured_at": str(payload.get("capturedAt") or ""),
+            "facing_mode": str(payload.get("facingMode") or ""),
+            "received_monotonic": time.monotonic(),
+        }
+        self._camera_frame_count += 1
+        if self._camera_frame_count == 1 or self._camera_frame_count % 30 == 0:
+            log.info(
+                "camera frame accepted user_id=%s count=%s bytes=%s facing_mode=%s",
+                self._user_id,
+                self._camera_frame_count,
+                len(image),
+                self._latest_camera_frame["facing_mode"],
+            )
+
+    def has_recent_camera_frame(self) -> bool:
+        if not self._latest_camera_frame:
+            return False
+        received = self._latest_camera_frame.get("received_monotonic")
+        if not isinstance(received, (int, float)):
+            return False
+        return time.monotonic() - received <= MAX_CAMERA_FRAME_AGE_SECONDS
+
+    def latest_camera_image_data_url(self) -> str | None:
+        if not self.has_recent_camera_frame():
             return None
+        return self._latest_camera_frame.get("image")
 
-        title = self._active_note.get("title") or "(sem título)"
-        content = str(self._active_note.get("content") or "")
-        if len(content) > 2000:
-            content = content[:2000].rstrip() + "... [conteúdo truncado]"
-        tags = ", ".join(str(t) for t in self._active_note.get("tags") or [])
 
-        return (
-            "Nota ativa nesta sessão de voz:\n"
-            f"- note_id: {self._active_note['id']}\n"
-            f"- título: {title}\n"
-            f"- conteúdo atual: {content or '(vazio)'}\n"
-            f"- tags: {tags or '(nenhuma)'}\n\n"
-            "Se o usuário pedir para alterar, corrigir, completar, acrescentar ou remover algo de "
-            "\"essa nota\", \"ela\", \"a nota\" ou da nota recém-criada sem identificar outra nota, "
-            "use notes_update_note com esse note_id. Não use notes_create_note para alterações da nota ativa. "
-            "Só crie uma nova nota quando o usuário pedir explicitamente uma nova nota."
-        )
+class KikiRealtimeVoiceAssistant(BaseKikiVoiceAssistant):
+    pass
 
+
+class KikiVoiceAssistant(BaseKikiVoiceAssistant):
     async def llm_node(
         self,
         chat_ctx: llm.ChatContext,
@@ -207,6 +314,7 @@ Formatação para fala (muito importante):
                 notes_service=notes_service,
                 contacts_service=contacts_service,
                 additional_system_context=self.voice_session_context(),
+                latest_input_image_data_url=self.latest_camera_image_data_url(),
             )
 
         return reply
@@ -217,44 +325,65 @@ server = AgentServer()
 
 @server.rtc_session(agent_name=AGENT_NAME)
 async def kiki_voice_entrypoint(ctx: JobContext) -> None:
+    boot_started = time.perf_counter()
     database_url = (os.getenv("DATABASE_URL") or "").strip()
     if not database_url:
         raise RuntimeError("DATABASE_URL não configurada para o worker de voz.")
 
+    config = load_voice_runtime_config()
     room_name = str(getattr(ctx.room, "name", "") or "")
-    user_id = _user_id_from_room_name(room_name) or "user"
-    user_timezone = _fetch_user_timezone(database_url, user_id) if user_id != "user" else "America/Sao_Paulo"
-    voice_pref = (
-        _fetch_user_assistant_voice(database_url, user_id)
-        if user_id != "user"
-        else None
-    )
+    metadata = _metadata_from_job(ctx)
+    user_id = str(metadata.get("user_id") or _user_id_from_room_name(room_name) or "user")
+    user_timezone = str(metadata.get("timezone") or "").strip()
+    if not user_timezone:
+        user_timezone = _fetch_user_timezone(database_url, user_id) if user_id != "user" else "America/Sao_Paulo"
+    voice_pref = str(metadata.get("assistant_voice") or "").strip()
+    if not voice_pref and user_id != "user":
+        voice_pref = _fetch_user_assistant_voice(database_url, user_id) or ""
     voice_override = voice_pref if voice_pref and voice_pref in AZURE_PT_BR_VOICE_IDS_FROZEN else None
 
-    session = AgentSession(
-        stt=build_stt(),
-        llm=build_llm(),
-        tts=build_tts(voice_override=voice_override),
-        vad=silero.VAD.load(activation_threshold=0.3),
-        turn_handling=TurnHandlingOptions(
-            turn_detection="stt",
-            endpointing={"min_delay": 0},
-        ),
+    session = build_agent_session(config=config, voice_override=voice_override)
+
+    if config.mode == "openai_realtime":
+        assistant = KikiRealtimeVoiceAssistant(
+            user_id=user_id,
+            user_timezone=user_timezone,
+            database_url=database_url,
+        )
+        assistant.update_tools(
+            build_livekit_tools(
+                current_user_id=user_id,
+                current_user_timezone=user_timezone,
+                database_url=database_url,
+                on_note_changed=assistant.remember_active_note,
+                on_note_deleted=assistant.forget_active_note,
+            )
+        )
+    else:
+        assistant = KikiVoiceAssistant(user_id=user_id, user_timezone=user_timezone, database_url=database_url)
+
+    log.info(
+        "voice bootstrap mode=%s realtime_model=%s realtime_voice=%s user_id=%s elapsed_ms=%.1f",
+        config.mode,
+        config.openai_realtime_model if config.mode == "openai_realtime" else "-",
+        config.openai_realtime_voice if config.mode == "openai_realtime" else "-",
+        user_id,
+        (time.perf_counter() - boot_started) * 1000,
     )
+
+    @ctx.room.on("data_received")
+    def _on_data_received(data_packet: Any) -> None:
+        assistant.remember_camera_frame(data_packet)
 
     await session.start(
         room=ctx.room,
-        agent=KikiVoiceAssistant(user_id=user_id, user_timezone=user_timezone, database_url=database_url),
+        agent=assistant,
         # Texto no cliente assim que o modelo/TTS geram (menos espera alinhando áudio).
         room_options=room_io.RoomOptions(
             text_output=room_io.TextOutputOptions(sync_transcription=False),
         ),
     )
-    await session.generate_reply(
-        instructions="Cumprimente brevemente em português do Brasil e pergunte como pode ajudar.",
-    )
 
 
 def run_cli() -> None:
     agents.cli.run_app(server)
-

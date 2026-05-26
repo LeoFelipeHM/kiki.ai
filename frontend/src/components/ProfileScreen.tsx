@@ -39,7 +39,7 @@ export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNa
   phone: '+55 (11) 98765-4321',
   birthdate: '15 de Março, 1995',
   language: 'Português (Brasil)',
-  timezone: 'GMT-3 (Brasília)',
+  timezone: 'America/Sao_Paulo',
 } }: ProfileScreenProps) {
   const { themeColor } = useTheme();
   const [showLogoutModal, setShowLogoutModal] = useState(false);

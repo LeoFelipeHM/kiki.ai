@@ -20,10 +20,30 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState<Page>('home');
 
+  const scrollToPageStart = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const appScroller = document.querySelector<HTMLElement>('[data-app-scroll-container="true"]');
+    appScroller?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.scrollingElement?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, []);
+
+  const keepPageAtStart = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
+    scrollToPageStart();
+    window.requestAnimationFrame(scrollToPageStart);
+    window.setTimeout(scrollToPageStart, 320);
+    window.setTimeout(scrollToPageStart, 620);
+  }, [scrollToPageStart]);
+
   const goToLogin = useCallback(() => {
     setMobileMenuOpen(false);
+    scrollToPageStart();
     routerNavigate(ROUTES.login);
-  }, [routerNavigate]);
+  }, [routerNavigate, scrollToPageStart]);
 
   /** Sempre do topo ao carregar / F5; evita o browser restaurar scroll antigo */
   useLayoutEffect(() => {
@@ -32,18 +52,19 @@ export default function App() {
     if (history && 'scrollRestoration' in history) {
       history.scrollRestoration = 'manual';
     }
-    window.scrollTo(0, 0);
-  }, []);
+    scrollToPageStart();
+  }, [scrollToPageStart]);
 
   /** Após trocar Recursos / Como funciona / Preços (etc.), o scroll corre no fim do layout — evita ficar no meio da página */
   useLayoutEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-  }, [currentPage]);
+    keepPageAtStart();
+  }, [currentPage, keepPageAtStart]);
 
   const navigateTo = (page: Page) => {
     setCurrentPage(page);
     setMobileMenuOpen(false);
+
+    keepPageAtStart();
   };
 
   return (

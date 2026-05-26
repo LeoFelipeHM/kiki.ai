@@ -7,6 +7,7 @@ from typing import Any, cast
 
 from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
+from llm.model_policy import coerce_multimodal_openai_model
 from llm.prompts.kiki_system import build_kiki_system_instructions
 from llm.sanitize import sanitize_reply
 from llm.tools.dispatcher import execute_tool_call
@@ -28,12 +29,13 @@ def _client(api_key: str | None) -> OpenAI:
 
 
 def _responses_model(model: str | None) -> str:
-    return (
+    configured = (
         model
         or os.getenv("OPENAI_RESPONSES_MODEL", "").strip()
         or os.getenv("OPENAI_CHAT_MODEL", "").strip()
         or DEFAULT_MODEL
     ).strip()
+    return coerce_multimodal_openai_model(configured, DEFAULT_MODEL)
 
 
 def _web_search_tool(user_timezone: str | None) -> dict[str, Any]:
@@ -73,6 +75,7 @@ def run_tool_agent(
     api_key: str | None = None,
     model: str | None = None,
     additional_system_context: str | None = None,
+    latest_input_image_data_url: str | None = None,
     max_tool_turns: int = DEFAULT_MAX_TOOL_TURNS,
 ) -> str:
     """Responses API: web_search (provedor) + function tools (calendário/notas)."""
@@ -82,9 +85,33 @@ def run_tool_agent(
     tools = [_web_search_tool(current_user_timezone)] + tools_schema_responses()
 
     input_messages: list[dict[str, Any]] = []
-    for role, text in messages:
+    latest_user_index = max((i for i, (role, _text) in enumerate(messages) if role == "user"), default=-1)
+    image_data_url = (latest_input_image_data_url or "").strip()
+    for i, (role, text) in enumerate(messages):
         r = role if role in ("user", "assistant") else "user"
-        input_messages.append({"type": "message", "role": r, "content": text.strip()})
+        clean_text = text.strip()
+        if image_data_url and i == latest_user_index and r == "user":
+            input_messages.append(
+                {
+                    "type": "message",
+                    "role": r,
+                    "content": [
+                        {"type": "input_text", "text": clean_text},
+                        {"type": "input_image", "image_url": image_data_url, "detail": "low"},
+                    ],
+                }
+            )
+        else:
+            input_messages.append({"type": "message", "role": r, "content": clean_text})
+
+    if not input_messages:
+        input_messages.append(
+            {
+                "type": "message",
+                "role": "user",
+                "content": "Inicie a conversa de voz com uma saudação breve.",
+            }
+        )
 
     previous_response_id: str | None = None
     next_input: list[dict[str, Any]] = input_messages
@@ -176,6 +203,7 @@ def run_tool_agent_stream(
     api_key: str | None = None,
     model: str | None = None,
     additional_system_context: str | None = None,
+    latest_input_image_data_url: str | None = None,
 ) -> Iterator[str]:
     text = run_tool_agent(
         messages,
@@ -187,6 +215,7 @@ def run_tool_agent_stream(
         api_key=api_key,
         model=model,
         additional_system_context=additional_system_context,
+        latest_input_image_data_url=latest_input_image_data_url,
     )
     step = 32
     for i in range(0, len(text), step):

@@ -62,21 +62,6 @@ services:
       - db
     restart: unless-stopped
 
-  public-frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.public
-    image: kiki-public-frontend:latest
-    container_name: kiki-public-frontend
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_SITE_URL=http://localhost:3000
-      - DASHBOARD_ORIGIN=http://frontend:5173
-    depends_on:
-      - frontend
-    restart: unless-stopped
-
   db:
     image: pgvector/pgvector:pg17
     container_name: kiki-db
