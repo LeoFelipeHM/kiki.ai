@@ -3,6 +3,7 @@ export const publicRoutes = [
   { href: '/recursos', label: 'Recursos' },
   { href: '/como-funciona', label: 'Como funciona' },
   { href: '/precos', label: 'Preços' },
+  { href: '/blog', label: 'Blog' },
   { href: '/cadastro', label: 'Começar grátis' },
 ] as const;
 

@@ -1,0 +1,36 @@
+[
+  {
+    "id": "8a6c06b0-2147-4887-87db-e222019dd7b3",
+    "title": "teste",
+    "slug": "tes1",
+    "summary": "teste",
+    "content": "teste",
+    "category": "teste",
+    "tags": [],
+    "coverImage": "",
+    "status": "draft",
+    "author": "Time Kiki",
+    "publishedAt": "2026-05-26",
+    "createdAt": "2026-05-26T15:11:14.866Z",
+    "updatedAt": "2026-05-26T15:11:48.342Z"
+  },
+  {
+    "id": "kiki-rotina-inteligente",
+    "title": "Como organizar sua rotina com mais clareza",
+    "slug": "como-organizar-sua-rotina-com-mais-clareza",
+    "summary": "Um guia simples para transformar tarefas soltas em uma rotina mais leve, clara e eficiente com a Kiki.",
+    "content": "## Menos atrito para comecar\n\nOrganizar a rotina nao precisa ser uma tarefa pesada. O primeiro passo e tirar compromissos, ideias e lembretes da cabeca e colocar tudo em um sistema confiavel.\n\n## Clareza antes de volume\n\nA Kiki ajuda a transformar informacoes soltas em proximas acoes. Assim, voce entende o que precisa ser feito, quando precisa acontecer e qual prioridade merece sua energia.\n\n## Uma rotina mais leve\n\nQuando tarefas, compromissos e lembretes ficam centralizados, o dia ganha menos ruído e mais foco. O resultado e uma rotina mais simples de acompanhar.",
+    "category": "Produtividade",
+    "tags": [
+      "rotina",
+      "organizacao",
+      "ia"
+    ],
+    "coverImage": "",
+    "status": "published",
+    "author": "Time Kiki",
+    "publishedAt": "2026-05-26",
+    "createdAt": "2026-05-26T12:00:00.000Z",
+    "updatedAt": "2026-05-26T15:03:41.900Z"
+  }
+]

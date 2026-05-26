@@ -22,7 +22,7 @@ export function Header() {
           </Link>
 
           <nav className="hidden md:flex items-center gap-1" aria-label="Navegação principal">
-            {publicRoutes.slice(1, 4).map((route) => (
+            {publicRoutes.slice(1, 5).map((route) => (
               <Link
                 key={route.href}
                 href={route.href}
