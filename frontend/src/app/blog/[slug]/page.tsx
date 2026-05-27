@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { PageShell } from '../../public-site/components';
 import { BlogContent } from '../BlogContent';
+import { BlogArticleMetrics } from '../BlogMetricsTracker';
 import { getPostBySlug, getPublishedPosts } from '../blog-store';
 import { estimateReadingTime, formatDate } from '../blog-utils';
 
@@ -57,6 +58,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
 
   return (
     <PageShell>
+      <BlogArticleMetrics postId={post.id} slug={post.slug} />
       <main className="pt-24 md:pt-32 pb-16 bg-white">
         <article className="max-w-3xl mx-auto px-4 md:px-6">
           <Link href="/blog" className="inline-flex items-center gap-2 text-sm font-semibold text-purple-700 hover:text-pink-600 mb-8">

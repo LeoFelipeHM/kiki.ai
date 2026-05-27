@@ -22,6 +22,7 @@ import { ManageSubscriptionPage } from './private-pages/ManageSubscriptionPage';
 import { IntegrationPage } from './private-pages/IntegrationPage';
 import { AdminUsersPage } from './private-pages/AdminUsersPage';
 import { AdminUsagePage } from './private-pages/AdminUsagePage';
+import { AdminBlogPage } from './private-pages/AdminBlogPage';
 import { SettingsPage } from './private-pages/SettingsPage';
 import { PublicLandingPage } from './private-pages/PublicLandingPage';
 
@@ -48,6 +49,7 @@ export const PAGE_REGISTRY = [
   { path: ROUTE_PATTERNS.integration, title: 'Integração' },
   { path: ROUTES.adminUsers, title: 'Administração de usuários' },
   { path: ROUTES.adminUsage, title: 'Uso da plataforma' },
+  { path: ROUTES.adminBlog, title: 'Administração do blog' },
 ] as const;
 
 export function ProtectedLayout({
@@ -152,6 +154,7 @@ export function RootRoutes({
         <Route path={ROUTE_PATTERNS.integration} element={<IntegrationPage />} />
         <Route path={ROUTES.adminUsers} element={<AdminUsersPage />} />
         <Route path={ROUTES.adminUsage} element={<AdminUsagePage />} />
+        <Route path={ROUTES.adminBlog} element={<AdminBlogPage />} />
       </Route>
       <Route
         path="*"
