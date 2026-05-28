@@ -22,6 +22,7 @@ export const ROUTES = {
   integration: (slug: string) => `/integracao/${slug}`,
   adminUsers: '/admin/usuarios',
   adminUsage: '/admin/uso',
+  adminBlog: '/admin/blog',
 } as const;
 
 /** Rotas com parâmetros (pattern React Router) */

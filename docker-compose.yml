@@ -9,6 +9,8 @@ services:
       - "8000:8000"
     volumes:
       - kiki-storage:/app/uploads
+      - ./frontend/data:/app/data
+      - ./frontend/public/blog-images:/app/public/blog-images
     env_file:
       - ./backend/.env
     depends_on:

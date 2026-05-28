@@ -9,6 +9,7 @@ import {
   Home,
   FileText,
   Users,
+  Newspaper,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from './ThemeProvider';
@@ -22,6 +23,7 @@ type MenuScreen =
   | 'settings'
   | 'notes'
   | 'contacts'
+  | 'admin-blog'
   | 'admin-users'
   | 'admin-usage';
 
@@ -33,6 +35,7 @@ const MENU_PATHS: Record<MenuScreen, string> = {
   chat: ROUTES.chat,
   profile: ROUTES.profile,
   settings: ROUTES.settings,
+  'admin-blog': ROUTES.adminBlog,
   'admin-users': ROUTES.adminUsers,
   'admin-usage': ROUTES.adminUsage,
 };
@@ -64,6 +67,7 @@ export function SideMenu({
     { id: 'contacts', icon: BookUser, label: 'Contatos', description: 'Nome e e-mail' },
     ...(isAdmin
       ? [
+          { id: 'admin-blog' as const, icon: Newspaper, label: 'Blog', description: 'Editar e publicar posts' },
           { id: 'admin-users' as const, icon: Users, label: 'Usuários', description: 'Administrar contas' },
           { id: 'admin-usage' as const, icon: Activity, label: 'Uso', description: 'Métricas da plataforma' },
         ]

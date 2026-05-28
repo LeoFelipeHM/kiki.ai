@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import { Card, PageShell, SectionHeader } from '../public-site/components';
+import { BlogListMetrics, BlogPostClickTracker } from './BlogMetricsTracker';
 import { getPublishedPosts } from './blog-store';
 import { estimateReadingTime, formatDate } from './blog-utils';
 
@@ -28,6 +29,7 @@ export default async function BlogPage() {
 
   return (
     <PageShell>
+      <BlogListMetrics />
       <main className="pt-24 md:pt-32 pb-16 bg-white">
         <SectionHeader
           eyebrow="Blog"
@@ -44,7 +46,8 @@ export default async function BlogPage() {
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
               {posts.map((post) => (
-                <Card key={post.id}>
+                <div key={post.id} data-blog-post-card data-post-id={post.id} data-post-slug={post.slug}>
+                <Card>
                   {post.coverImage ? (
                     <div className="relative -mx-6 -mt-6 mb-5 aspect-[16/10] overflow-hidden rounded-t-2xl md:-mx-8 md:-mt-8 md:rounded-t-3xl">
                       <Image
@@ -65,14 +68,17 @@ export default async function BlogPage() {
                   <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-3 leading-tight">{post.title}</h2>
                   <p className="text-sm text-gray-500 mb-3">{formatDate(post.publishedAt)}</p>
                   <p className="text-sm md:text-base text-gray-600 leading-relaxed mb-6">{post.summary}</p>
-                  <Link
-                    href={`/blog/${post.slug}`}
-                    className="inline-flex items-center gap-2 text-sm font-semibold text-purple-700 hover:text-pink-600 transition-colors"
-                  >
-                    Ler artigo
-                    <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                  </Link>
+                  <BlogPostClickTracker postId={post.id} slug={post.slug}>
+                    <Link
+                      href={`/blog/${post.slug}`}
+                      className="inline-flex items-center gap-2 text-sm font-semibold text-purple-700 hover:text-pink-600 transition-colors"
+                    >
+                      Ler artigo
+                      <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                    </Link>
+                  </BlogPostClickTracker>
                 </Card>
+                </div>
               ))}
             </div>
           )}

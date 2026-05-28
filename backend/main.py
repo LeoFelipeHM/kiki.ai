@@ -8,8 +8,10 @@ from application.notification_dispatcher import NotificationDispatcher
 from infrastructure.config import load_settings
 from presentation.api.routers import (
     admin,
+    admin_blog,
     admin_usage,
     auth,
+    blog_metrics,
     calendar,
     chat,
     contacts,
@@ -28,6 +30,8 @@ def _cors_allow_origins() -> list[str]:
         # Local
         "http://127.0.0.1:5173",
         "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
         "http://127.0.0.1:8000",
         "http://localhost:8000",
 
@@ -102,7 +106,9 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(admin_blog.router)
 app.include_router(admin_usage.router)
+app.include_router(blog_metrics.router)
 app.include_router(calendar.router)
 app.include_router(contacts.router)
 app.include_router(notes.router)
