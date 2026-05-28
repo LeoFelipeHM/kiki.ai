@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from './components/ThemeProvider';
 import type { CalendarEvent } from './types/calendar';
@@ -20,7 +20,6 @@ import { RootRoutes } from './root';
 function AppRoutes() {
   const navigate = useNavigate();
   const location = useLocation();
-  const appScrollRef = useRef<HTMLDivElement>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -34,19 +33,12 @@ function AppRoutes() {
     phone: '+55 (11) 98765-4321',
     birthdate: '15 de Março, 1995',
     language: 'Português (Brasil)',
-    timezone: 'America/Sao_Paulo',
+    timezone: 'GMT-3 (Brasília)',
   });
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [notificationPrefs, setNotificationPrefs] =
     useState<NotificationPreferencesDto | null>(null);
-
-  useLayoutEffect(() => {
-    if (appScrollRef.current) {
-      appScrollRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    }
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-  }, [location.pathname, location.search]);
 
   const handleLogout = useCallback(async () => {
     if (isWebPushSupported()) {
@@ -237,8 +229,6 @@ function AppRoutes() {
           </div>
         ) : (
           <div
-            ref={appScrollRef}
-            data-app-scroll-container="true"
             className={`flex h-full min-h-0 flex-1 flex-col w-full ${
               isPublicFullWidthLanding ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'
             }`}

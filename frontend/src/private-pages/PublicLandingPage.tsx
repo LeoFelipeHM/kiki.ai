@@ -1,6 +1,6 @@
 import KikiMarketingApp from '@/landing-kiki4/App';
 
-/** Shell público: cópia fiel da landing page importada (sem alterar markup/estilos). */
+/** Shell público: cópia fiel de `Criar landing page Kiki-4/src/app/App.tsx` (sem alterar markup/estilos). */
 export function PublicLandingPage() {
   return <KikiMarketingApp />;
 }
