@@ -25,12 +25,14 @@ import { AdminUsagePage } from './private-pages/AdminUsagePage';
 import { AdminBlogPage } from './private-pages/AdminBlogPage';
 import { SettingsPage } from './private-pages/SettingsPage';
 import { PublicLandingPage } from './private-pages/PublicLandingPage';
+import { PublicBlogPage } from './private-pages/PublicBlogPage';
 
 export { ROUTES, ROUTE_PATTERNS } from './root.paths';
 
 /** Mapa legível: URL → página (documentação e eventual uso em menus dinâmicos) */
 export const PAGE_REGISTRY = [
   { path: ROUTES.landing, title: 'Landing' },
+  { path: ROUTES.blog, title: 'Blog' },
   { path: ROUTES.login, title: 'Login' },
   { path: ROUTES.home, title: 'Início' },
   { path: ROUTES.chat, title: 'Chat com Kiki' },
@@ -125,6 +127,8 @@ export function RootRoutes({
           isAuthenticated ? <Navigate to={ROUTES.home} replace /> : <PublicLandingPage />
         }
       />
+      <Route path={ROUTES.blog} element={<PublicBlogPage />} />
+      <Route path={ROUTE_PATTERNS.blogPost} element={<PublicBlogPage />} />
       <Route
         element={
           <ProtectedLayout

@@ -4,6 +4,7 @@
  */
 export const ROUTES = {
   landing: '/',
+  blog: '/blog',
   login: '/login',
   home: '/home',
   chat: '/chat',
@@ -27,6 +28,7 @@ export const ROUTES = {
 
 /** Rotas com parâmetros (pattern React Router) */
 export const ROUTE_PATTERNS = {
+  blogPost: '/blog/:slug',
   profileEdit: '/profile/editar/:slug',
   integration: '/integracao/:slug',
 } as const;

@@ -42,11 +42,7 @@ const emptyForm: FormState = {
 
 function publicBlogUrl() {
   if (typeof window === 'undefined') return '/blog';
-  const { protocol, hostname, port, origin } = window.location;
-  if ((hostname === 'localhost' || hostname === '127.0.0.1') && port === '5173') {
-    return `${protocol}//${hostname}:3000/blog`;
-  }
-  return `${origin}/blog`;
+  return `${window.location.origin}/blog`;
 }
 
 export function BlogAdminScreen({

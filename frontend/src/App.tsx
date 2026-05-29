@@ -181,11 +181,14 @@ function AppRoutes() {
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
   }, [navigate]);
 
-  const isPublicFullWidthLanding =
-    !isAuthLoading && !isAuthenticated && location.pathname === ROUTES.landing;
+  const isPublicFullWidthPage =
+    !isAuthLoading &&
+    (location.pathname === ROUTES.landing ||
+      location.pathname === ROUTES.blog ||
+      location.pathname.startsWith(`${ROUTES.blog}/`));
 
-  /** Marketing do bundle é sempre light; evita tokens dark na landing pública. */
-  const shellIsDark = appearance === 'dark' && !isPublicFullWidthLanding;
+  /** Marketing e blog publico ficam sempre em light. */
+  const shellIsDark = appearance === 'dark' && !isPublicFullWidthPage;
 
   const shellValue = useMemo(
     (): AppShellContextValue => ({
@@ -221,7 +224,7 @@ function AppRoutes() {
   return (
     <ThemeProvider themeColor={themeColor} appearance={appearance}>
       <div
-        className={`size-full flex flex-col bg-background ${isPublicFullWidthLanding ? 'w-full' : 'max-w-md mx-auto'} ${shellIsDark ? 'dark' : ''}`}
+        className={`size-full flex flex-col bg-background ${isPublicFullWidthPage ? 'w-full' : 'max-w-md mx-auto'} ${shellIsDark ? 'dark' : ''}`}
       >
         {isAuthLoading ? (
           <div className="size-full flex items-center justify-center">
@@ -230,7 +233,7 @@ function AppRoutes() {
         ) : (
           <div
             className={`flex h-full min-h-0 flex-1 flex-col w-full ${
-              isPublicFullWidthLanding ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'
+              isPublicFullWidthPage ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'
             }`}
           >
             <RootRoutes

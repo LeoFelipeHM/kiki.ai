@@ -11,6 +11,7 @@ from presentation.api.routers import (
     admin_blog,
     admin_usage,
     auth,
+    blog,
     blog_metrics,
     calendar,
     chat,
@@ -108,6 +109,7 @@ app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(admin_blog.router)
 app.include_router(admin_usage.router)
+app.include_router(blog.router)
 app.include_router(blog_metrics.router)
 app.include_router(calendar.router)
 app.include_router(contacts.router)
