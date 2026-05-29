@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, CalendarDays, Clock, Loader2, Search } from 'lucide-react';
 import { BlogContent } from '@/app/blog/BlogContent';
+import { resolveBlogImageUrl } from '@/app/blog/blog-media';
 import type { BlogPost } from '@/app/blog/blog-types';
 import { estimateReadingTime, formatDate, isPostPublishable } from '@/app/blog/blog-utils';
 import { listPublishedBlogPosts, getPublishedBlogPost } from '@/services/blogPublic';
@@ -147,7 +148,7 @@ function BlogCard({ post }: { post: BlogPost }) {
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-xl hover:shadow-gray-900/5">
       {post.coverImage ? (
-        <img src={post.coverImage} alt="" className="aspect-[16/10] w-full object-cover" loading="lazy" />
+        <img src={resolveBlogImageUrl(post.coverImage)} alt="" className="aspect-[16/10] w-full object-cover" loading="lazy" decoding="async" />
       ) : null}
       <div className="flex flex-1 flex-col p-5">
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -203,6 +204,16 @@ function ArticleView({ state, onRetry }: { state: LoadState; onRetry: () => void
           Voltar para o blog
         </Link>
 
+        {post.coverImage ? (
+          <img
+            src={resolveBlogImageUrl(post.coverImage)}
+            alt=""
+            loading="eager"
+            decoding="async"
+            className="mb-10 max-h-[72vh] w-full rounded-2xl border border-gray-100 bg-gray-50 object-contain"
+          />
+        ) : null}
+
         <header className="mb-10">
           <div className="mb-5 flex flex-wrap items-center gap-3">
             <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700">
@@ -223,14 +234,6 @@ function ArticleView({ state, onRetry }: { state: LoadState; onRetry: () => void
             <time dateTime={post.publishedAt}>{formatDate(post.publishedAt)}</time>
           </div>
         </header>
-
-        {post.coverImage ? (
-          <img
-            src={post.coverImage}
-            alt=""
-            className="mb-10 aspect-[16/9] w-full rounded-2xl border border-gray-100 object-cover shadow-xl shadow-purple-900/5"
-          />
-        ) : null}
 
         <BlogContent content={post.content} />
 

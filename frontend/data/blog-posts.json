@@ -4,15 +4,15 @@
     "title": "teste",
     "slug": "tes1",
     "summary": "teste",
-    "content": "teste",
+    "content": "<figure data-kiki-image=\"true\" style=\"max-width:720px;text-align:center;margin:28px auto;clear:both;\"><img src=\"/blog-images/group-1-4a2571f543.png\" alt=\"\" style=\"display:block;width:100%;max-width:720px;border-radius:18px;margin:0 auto;\"></figure><p><br></p>teste",
     "category": "teste",
     "tags": [],
-    "coverImage": "",
-    "status": "draft",
+    "coverImage": "/blog-images/group-1-e7b3cdc874.png",
+    "status": "published",
     "author": "Time Kiki",
-    "publishedAt": "2026-05-26",
+    "publishedAt": "2026-05-26T00:00",
     "createdAt": "2026-05-26T15:11:14.866Z",
-    "updatedAt": "2026-05-26T15:11:48.342Z"
+    "updatedAt": "2026-05-29T18:47:06.538Z"
   },
   {
     "id": "kiki-rotina-inteligente",

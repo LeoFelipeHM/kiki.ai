@@ -42,6 +42,10 @@ def _upload_dir() -> Path:
     return _frontend_root() / "public" / "blog-images"
 
 
+def blog_images_dir() -> Path:
+    return _upload_dir()
+
+
 def slugify(value: str) -> str:
     normalized = unicodedata.normalize("NFD", value)
     without_marks = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
