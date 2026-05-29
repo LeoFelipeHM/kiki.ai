@@ -113,27 +113,18 @@ function BlogListView({
 }) {
   return (
     <main className="pb-16">
-      <section className="px-5 pb-10 pt-14 md:px-8 md:pb-14 md:pt-20">
-        <div className="mx-auto max-w-4xl text-center">
-          <p className="mb-3 text-sm font-semibold text-purple-700">Blog</p>
-          <h1 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 md:text-5xl">
-            Ideias para uma rotina mais leve
-          </h1>
-          <p className="mx-auto max-w-2xl text-base leading-7 text-gray-600 md:text-lg">
-            Artigos publicados pela equipe Kiki sobre organizacao, produtividade e formas inteligentes de cuidar do dia a dia.
-          </p>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-5 md:px-8">
-        <div className="mb-6 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-          <Search className="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />
-          <input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Buscar artigos"
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
-          />
+      <section className="mx-auto max-w-6xl px-5 pt-12 md:px-8 md:pt-16">
+        <div className="mb-8 flex flex-col gap-8">
+          <h1 className="text-6xl font-bold tracking-tight text-purple-700 md:text-7xl">Blog</h1>
+          <div className="flex w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <Search className="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />
+            <input
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="Buscar artigos"
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
+            />
+          </div>
         </div>
 
         {state.status === 'loading' ? <LoadingBlock label="Carregando artigos..." /> : null}
