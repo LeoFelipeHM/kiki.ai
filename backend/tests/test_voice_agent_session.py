@@ -6,6 +6,7 @@ import json
 from kiki_livekit import entrypoint
 from kiki_livekit.config import VoiceRuntimeConfig
 from kiki_livekit.entrypoint import KIKI_VOICE_INSTRUCTIONS, KikiVoiceAssistant, build_agent_session
+from kiki_livekit.stt import VOICE_VAD_THRESHOLD
 from llm.prompts.kiki_system import KIKI_SYSTEM_PROMPT
 
 
@@ -48,9 +49,13 @@ def test_openai_realtime_session_uses_realtime_model(monkeypatch):
     )
 
     assert isinstance(session, _FakeSession)
-    assert _FakeRealtimeModel.calls == [
-        {"model": "gpt-realtime-mini", "voice": "marin", "speed": 1.0}
-    ]
+    assert _FakeRealtimeModel.calls[0]["model"] == "gpt-realtime-mini"
+    assert _FakeRealtimeModel.calls[0]["voice"] == "marin"
+    assert _FakeRealtimeModel.calls[0]["speed"] == 1.0
+    assert _FakeRealtimeModel.calls[0]["input_audio_noise_reduction"] == "near_field"
+    assert _FakeRealtimeModel.calls[0]["turn_detection"].threshold == VOICE_VAD_THRESHOLD
+    assert _FakeRealtimeModel.calls[0]["turn_detection"].create_response is True
+    assert _FakeRealtimeModel.calls[0]["turn_detection"].interrupt_response is True
     assert list(_FakeSession.calls[0].keys()) == ["llm"]
     assert isinstance(_FakeSession.calls[0]["llm"], _FakeRealtimeModel)
 
@@ -61,7 +66,7 @@ def test_classic_session_uses_existing_components(monkeypatch):
     monkeypatch.setattr("kiki_livekit.entrypoint.build_stt", lambda: "stt")
     monkeypatch.setattr("kiki_livekit.entrypoint.build_llm", lambda: "llm")
     monkeypatch.setattr("kiki_livekit.entrypoint.build_tts", lambda voice_override=None: f"tts:{voice_override}")
-    monkeypatch.setattr("kiki_livekit.entrypoint.silero.VAD.load", lambda activation_threshold: f"vad:{activation_threshold}")
+    monkeypatch.setattr("kiki_livekit.entrypoint.silero.VAD.load", lambda **kwargs: f"vad:{kwargs['activation_threshold']}")
 
     session = build_agent_session(
         config=VoiceRuntimeConfig(
@@ -77,7 +82,7 @@ def test_classic_session_uses_existing_components(monkeypatch):
     assert _FakeSession.calls[0]["stt"] == "stt"
     assert _FakeSession.calls[0]["llm"] == "llm"
     assert _FakeSession.calls[0]["tts"] == "tts:pt-BR-FranciscaNeural"
-    assert _FakeSession.calls[0]["vad"] == "vad:0.3"
+    assert _FakeSession.calls[0]["vad"] == f"vad:{VOICE_VAD_THRESHOLD}"
 
 
 def test_voice_instructions_reuse_main_prompt_with_video_context():

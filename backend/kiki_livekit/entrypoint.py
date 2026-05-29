@@ -14,6 +14,7 @@ from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, TurnHandlingOptions, llm, room_io
 from livekit.plugins import silero
 from livekit.plugins.openai import realtime
+from openai.types import realtime as openai_realtime_types
 from psycopg.rows import dict_row
 
 from application.azure_voice_ids import AZURE_PT_BR_VOICE_IDS_FROZEN
@@ -27,7 +28,7 @@ from llm.openai_chat_client import generate_reply_with_tools
 from llm.prompts.kiki_system import KIKI_SYSTEM_PROMPT
 from .config import VoiceRuntimeConfig, load_voice_runtime_config
 from .llm import build_llm
-from .stt import build_stt
+from .stt import VOICE_MAX_TURN_SILENCE_MS, VOICE_MIN_TURN_SILENCE_MS, VOICE_VAD_THRESHOLD, build_stt
 from .tts import build_tts
 from .tools import build_livekit_tools
 
@@ -37,6 +38,9 @@ AGENT_NAME = os.getenv("KIKI_VOICE_AGENT_NAME", "kiki-voice").strip() or "kiki-v
 CAMERA_FRAME_TOPIC = "kiki.camera.frame"
 MAX_CAMERA_FRAME_DATA_URL_CHARS = 20_000
 MAX_CAMERA_FRAME_AGE_SECONDS = 10.0
+VOICE_MIN_SPEECH_DURATION_SECONDS = 0.2
+VOICE_SILERO_MIN_SILENCE_SECONDS = VOICE_MIN_TURN_SILENCE_MS / 1000
+VOICE_SILERO_DEACTIVATION_THRESHOLD = 0.35
 log = logging.getLogger("kiki.livekit")
 
 _ROOM_PREFIX_RE = re.compile(r"^kiki-(?P<uid>.+)-[0-9a-f]{12}$", re.IGNORECASE)
@@ -103,6 +107,15 @@ def build_agent_session(
             model=config.openai_realtime_model,
             voice=_voice_from_openai_env(config),
             speed=config.openai_realtime_speed,
+            input_audio_noise_reduction="near_field",
+            turn_detection=openai_realtime_types.realtime_audio_input_turn_detection.ServerVad(
+                type="server_vad",
+                threshold=VOICE_VAD_THRESHOLD,
+                prefix_padding_ms=300,
+                silence_duration_ms=VOICE_MAX_TURN_SILENCE_MS,
+                create_response=True,
+                interrupt_response=True,
+            ),
         )
         return AgentSession(llm=model)
 
@@ -110,7 +123,12 @@ def build_agent_session(
         stt=build_stt(),
         llm=build_llm(),
         tts=build_tts(voice_override=voice_override),
-        vad=silero.VAD.load(activation_threshold=0.3),
+        vad=silero.VAD.load(
+            activation_threshold=VOICE_VAD_THRESHOLD,
+            deactivation_threshold=VOICE_SILERO_DEACTIVATION_THRESHOLD,
+            min_speech_duration=VOICE_MIN_SPEECH_DURATION_SECONDS,
+            min_silence_duration=VOICE_SILERO_MIN_SILENCE_SECONDS,
+        ),
         turn_handling=TurnHandlingOptions(
             turn_detection="stt",
             endpointing={"min_delay": 0},

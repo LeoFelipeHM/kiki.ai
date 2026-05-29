@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { SideMenu } from './components/SideMenu';
 import { LoginScreen } from './components/LoginScreen';
 import type { LoginResult } from './services/auth';
@@ -67,8 +67,10 @@ export function ProtectedLayout({
   isMenuOpen: boolean;
   setIsMenuOpen: Dispatch<SetStateAction<boolean>>;
 }) {
+  const location = useLocation();
+
   if (!isAuthenticated) {
-    return <Navigate to={ROUTES.login} replace />;
+    return <Navigate to={ROUTES.login} replace state={{ from: location }} />;
   }
   return (
     <>

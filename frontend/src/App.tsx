@@ -17,6 +17,39 @@ import {
 import { ROUTES } from './root.paths';
 import { RootRoutes } from './root';
 
+type LoginRedirectState = {
+  from?: {
+    pathname?: string;
+    search?: string;
+    hash?: string;
+  };
+};
+
+function isInternalPath(path: string) {
+  return path.startsWith('/') && !path.startsWith('//') && !/^[a-z][a-z0-9+.-]*:/i.test(path);
+}
+
+function canUsePostLoginPath(path: string, role: string) {
+  if (path === ROUTES.login || path === ROUTES.landing) return false;
+  if (path.startsWith('/admin')) return role === 'admin';
+  return true;
+}
+
+function postLoginPath(location: ReturnType<typeof useLocation>, role: string) {
+  const state = location.state as LoginRedirectState | null;
+  const from = state?.from?.pathname
+    ? `${state.from.pathname}${state.from.search ?? ''}${state.from.hash ?? ''}`
+    : null;
+  const queryRedirect = new URLSearchParams(location.search).get('redirect');
+  const target = from || queryRedirect;
+
+  if (target && isInternalPath(target) && canUsePostLoginPath(target, role)) {
+    return target;
+  }
+
+  return ROUTES.home;
+}
+
 function AppRoutes() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -79,11 +112,11 @@ function AppRoutes() {
         setCurrentUserId(result.user.id);
         setUserRole(result.user.role);
       }
-      navigate(ROUTES.home, { replace: true });
       setIsAuthenticated(true);
+      navigate(postLoginPath(location, result.user.role), { replace: true });
       return result;
     },
-    [navigate],
+    [location, navigate],
   );
 
   useEffect(() => {
@@ -183,6 +216,8 @@ function AppRoutes() {
 
   const isPublicFullWidthLanding =
     !isAuthLoading && !isAuthenticated && location.pathname === ROUTES.landing;
+  const isDesktopWorkspace = location.pathname === ROUTES.adminBlog;
+  const isFullWidthShell = isPublicFullWidthLanding || isDesktopWorkspace;
 
   /** Marketing do bundle é sempre light; evita tokens dark na landing pública. */
   const shellIsDark = appearance === 'dark' && !isPublicFullWidthLanding;
@@ -221,7 +256,7 @@ function AppRoutes() {
   return (
     <ThemeProvider themeColor={themeColor} appearance={appearance}>
       <div
-        className={`size-full flex flex-col bg-background ${isPublicFullWidthLanding ? 'w-full' : 'max-w-md mx-auto'} ${shellIsDark ? 'dark' : ''}`}
+        className={`size-full flex flex-col bg-background ${isFullWidthShell ? 'w-full' : 'max-w-md mx-auto'} ${shellIsDark ? 'dark' : ''}`}
       >
         {isAuthLoading ? (
           <div className="size-full flex items-center justify-center">
@@ -230,7 +265,7 @@ function AppRoutes() {
         ) : (
           <div
             className={`flex h-full min-h-0 flex-1 flex-col w-full ${
-              isPublicFullWidthLanding ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'
+              isFullWidthShell ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'
             }`}
           >
             <RootRoutes

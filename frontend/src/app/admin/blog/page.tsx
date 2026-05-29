@@ -12,5 +12,5 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminBlogPage() {
-  redirect('/login');
+  redirect('/login?redirect=/admin/blog');
 }

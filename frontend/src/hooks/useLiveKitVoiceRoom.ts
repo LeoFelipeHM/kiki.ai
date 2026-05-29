@@ -13,6 +13,8 @@ export type LkAgentState = 'idle' | 'initializing' | 'listening' | 'thinking' | 
 
 const TRANSCRIPTION_TOPIC = 'lk.transcription';
 const CAMERA_FRAME_TOPIC = 'kiki.camera.frame';
+const USER_SPEECH_CONFIRM_MS = 350;
+const USER_SPEECH_RELEASE_MS = 180;
 
 function parseAgentState(attrs: Readonly<Record<string, string>>): LkAgentState | null {
   const v = attrs['lk.agent.state'];
@@ -38,7 +40,11 @@ function findAgentParticipant(room: Room): Participant | undefined {
   return undefined;
 }
 
-function computeTurnVisual(room: Room, agentState: LkAgentState | null): VoiceTurnVisual {
+function computeTurnVisual(
+  room: Room,
+  agentState: LkAgentState | null,
+  userSpeakingConfirmed: boolean,
+): VoiceTurnVisual {
   if (agentState === 'thinking') return 'thinking';
   if (agentState === 'speaking') return 'kiki-speaking';
 
@@ -48,7 +54,7 @@ function computeTurnVisual(room: Room, agentState: LkAgentState | null): VoiceTu
   const agentTalking = speakers.some((s) => s.sid !== local.sid);
 
   if (agentTalking) return 'kiki-speaking';
-  if (userTalking) return 'user-speaking';
+  if (userTalking && userSpeakingConfirmed) return 'user-speaking';
   return 'idle';
 }
 
@@ -57,6 +63,10 @@ export function useLiveKitVoiceRoom() {
   const agentStateRef = useRef<LkAgentState | null>(null);
   const playbackUnlockCleanupRef = useRef<(() => void) | null>(null);
   const remoteAudioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const userSpeakingStartedAtRef = useRef<number | null>(null);
+  const userSpeakingConfirmedRef = useRef(false);
+  const userSpeechConfirmTimerRef = useRef<number | null>(null);
+  const userSpeechReleaseTimerRef = useRef<number | null>(null);
   const [phase, setPhase] = useState<VoiceConnectionPhase>('idle');
   const [turnVisual, setTurnVisual] = useState<VoiceTurnVisual>('idle');
   const [agentState, setAgentState] = useState<LkAgentState | null>(null);
@@ -81,6 +91,17 @@ export function useLiveKitVoiceRoom() {
     map.clear();
   }, []);
 
+  const clearUserSpeechTimers = useCallback(() => {
+    if (userSpeechConfirmTimerRef.current != null) {
+      window.clearTimeout(userSpeechConfirmTimerRef.current);
+      userSpeechConfirmTimerRef.current = null;
+    }
+    if (userSpeechReleaseTimerRef.current != null) {
+      window.clearTimeout(userSpeechReleaseTimerRef.current);
+      userSpeechReleaseTimerRef.current = null;
+    }
+  }, []);
+
   const refreshSpeakingHint = useCallback((room: Room) => {
     const agentParticipant = findAgentParticipant(room);
     const parsed = agentParticipant ? parseAgentState(agentParticipant.attributes) : null;
@@ -89,12 +110,52 @@ export function useLiveKitVoiceRoom() {
       setAgentState(parsed);
     }
     const effective = parsed ?? agentStateRef.current;
-    setTurnVisual(computeTurnVisual(room, effective));
+    const localTalking = room.activeSpeakers.some((s) => s.sid === room.localParticipant.sid);
+
+    if (localTalking) {
+      if (userSpeechReleaseTimerRef.current != null) {
+        window.clearTimeout(userSpeechReleaseTimerRef.current);
+        userSpeechReleaseTimerRef.current = null;
+      }
+      if (userSpeakingStartedAtRef.current == null) {
+        userSpeakingStartedAtRef.current = performance.now();
+      }
+      const elapsed = performance.now() - userSpeakingStartedAtRef.current;
+      if (elapsed >= USER_SPEECH_CONFIRM_MS) {
+        userSpeakingConfirmedRef.current = true;
+      } else if (userSpeechConfirmTimerRef.current == null) {
+        userSpeechConfirmTimerRef.current = window.setTimeout(() => {
+          userSpeechConfirmTimerRef.current = null;
+          if (room.activeSpeakers.some((s) => s.sid === room.localParticipant.sid)) {
+            userSpeakingConfirmedRef.current = true;
+            setTurnVisual(computeTurnVisual(room, agentStateRef.current, true));
+          }
+        }, USER_SPEECH_CONFIRM_MS - elapsed);
+      }
+    } else {
+      userSpeakingStartedAtRef.current = null;
+      if (userSpeechConfirmTimerRef.current != null) {
+        window.clearTimeout(userSpeechConfirmTimerRef.current);
+        userSpeechConfirmTimerRef.current = null;
+      }
+      if (userSpeakingConfirmedRef.current && userSpeechReleaseTimerRef.current == null) {
+        userSpeechReleaseTimerRef.current = window.setTimeout(() => {
+          userSpeechReleaseTimerRef.current = null;
+          userSpeakingConfirmedRef.current = false;
+          setTurnVisual(computeTurnVisual(room, agentStateRef.current, false));
+        }, USER_SPEECH_RELEASE_MS);
+      } else if (!userSpeakingConfirmedRef.current) {
+        userSpeakingConfirmedRef.current = false;
+      }
+    }
+
+    setTurnVisual(computeTurnVisual(room, effective, userSpeakingConfirmedRef.current));
   }, []);
 
   const disconnect = useCallback(async () => {
     playbackUnlockCleanupRef.current?.();
     playbackUnlockCleanupRef.current = null;
+    clearUserSpeechTimers();
     cleanupRemoteAudio();
     const room = roomRef.current;
     roomRef.current = null;
@@ -105,11 +166,13 @@ export function useLiveKitVoiceRoom() {
     setTurnVisual('idle');
     setAgentState(null);
     agentStateRef.current = null;
+    userSpeakingStartedAtRef.current = null;
+    userSpeakingConfirmedRef.current = false;
     setUserTranscript('');
     setAgentTranscript('');
     setErrorMessage(null);
     setMicEnabled(true);
-  }, []);
+  }, [cleanupRemoteAudio, clearUserSpeechTimers]);
 
   const connect = useCallback(async () => {
     if (roomRef.current) return;
@@ -130,7 +193,7 @@ export function useLiveKitVoiceRoom() {
         audioCaptureDefaults: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true,
+          autoGainControl: false,
         },
       });
       pendingRoom = room;
@@ -193,10 +256,13 @@ export function useLiveKitVoiceRoom() {
         if (state === ConnectionState.Connected) setPhase('connected');
         if (state === ConnectionState.Disconnected) {
           cleanupRemoteAudio();
+          clearUserSpeechTimers();
           setPhase('idle');
           setTurnVisual('idle');
           setAgentState(null);
           agentStateRef.current = null;
+          userSpeakingStartedAtRef.current = null;
+          userSpeakingConfirmedRef.current = false;
           setUserTranscript('');
           setAgentTranscript('');
         }
@@ -277,6 +343,7 @@ export function useLiveKitVoiceRoom() {
         room.off(RoomEvent.ParticipantConnected, onParticipantConnected);
         room.off(RoomEvent.ParticipantAttributesChanged, onParticipantAttributesChanged);
         room.unregisterTextStreamHandler(TRANSCRIPTION_TOPIC);
+        clearUserSpeechTimers();
       };
       room.on(RoomEvent.TrackUnsubscribed, onRemoteTrackUnsubscribed);
 
@@ -295,6 +362,7 @@ export function useLiveKitVoiceRoom() {
       console.debug('[voice] connect failed', e);
       playbackUnlockCleanupRef.current?.();
       playbackUnlockCleanupRef.current = null;
+      clearUserSpeechTimers();
       cleanupRemoteAudio();
       if (pendingRoom) {
         await pendingRoom.disconnect().catch(() => {});
@@ -305,7 +373,7 @@ export function useLiveKitVoiceRoom() {
         e instanceof Error ? e.message : 'Não foi possível conectar à chamada de voz.';
       setErrorMessage(msg);
     }
-  }, [cleanupRemoteAudio, refreshSpeakingHint]);
+  }, [cleanupRemoteAudio, clearUserSpeechTimers, refreshSpeakingHint]);
 
   const toggleMicrophone = useCallback(async () => {
     const room = roomRef.current;
