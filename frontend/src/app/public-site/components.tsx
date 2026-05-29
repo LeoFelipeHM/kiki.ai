@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 import { ArrowRight, Check, Menu, Star } from 'lucide-react';
 import { dashboardRoutes, publicRoutes } from './routes';
 
+const headerRoutes = publicRoutes.filter((route) => route.href !== '/' && route.href !== '/cadastro');
+
 export function Header() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/85 backdrop-blur-xl border-b border-gray-100">
@@ -22,7 +24,7 @@ export function Header() {
           </Link>
 
           <nav className="hidden md:flex items-center gap-1" aria-label="Navegação principal">
-            {publicRoutes.slice(1, 5).map((route) => (
+            {headerRoutes.map((route) => (
               <Link
                 key={route.href}
                 href={route.href}

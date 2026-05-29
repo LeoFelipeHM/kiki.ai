@@ -45,6 +45,11 @@ export default function App() {
     routerNavigate(ROUTES.login);
   }, [routerNavigate, scrollToPageStart]);
 
+  const goToBlog = useCallback(() => {
+    setMobileMenuOpen(false);
+    window.location.assign('/blog');
+  }, []);
+
   /** Sempre do topo ao carregar / F5; evita o browser restaurar scroll antigo */
   useLayoutEffect(() => {
     if (typeof window === 'undefined') return;
@@ -122,6 +127,13 @@ export default function App() {
               >
                 Preços
               </button>
+              <button
+                type="button"
+                onClick={goToBlog}
+                className="px-4 py-2 text-sm rounded-lg text-gray-700 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              >
+                Blog
+              </button>
             </nav>
 
             <div className="hidden md:flex items-center gap-3">
@@ -166,6 +178,9 @@ export default function App() {
                 </button>
                 <button onClick={() => navigateTo('pricing')} className="px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg text-left">
                   Preços
+                </button>
+                <button onClick={goToBlog} className="px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-lg text-left">
+                  Blog
                 </button>
                 <div className="mt-4 px-4 flex flex-col gap-2">
                   <button
@@ -249,7 +264,7 @@ export default function App() {
               <h4 className="text-sm md:text-base font-semibold mb-2 md:mb-3 text-gray-900">Empresa</h4>
               <ul className="space-y-1.5 md:space-y-2 text-xs md:text-sm text-gray-600">
                 <li><button onClick={() => navigateTo('home')} className="hover:text-gray-900">Sobre</button></li>
-                <li><button onClick={() => navigateTo('home')} className="hover:text-gray-900">Blog</button></li>
+                <li><button onClick={goToBlog} className="hover:text-gray-900">Blog</button></li>
                 <li><button onClick={() => navigateTo('home')} className="hover:text-gray-900">Contato</button></li>
               </ul>
             </div>

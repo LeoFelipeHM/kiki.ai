@@ -83,6 +83,24 @@ def _normalize_published_at(value: str | None) -> str:
     return value
 
 
+def _is_post_publishable(post: dict[str, Any]) -> bool:
+    if post.get("status") != "published":
+        return False
+
+    raw_date = str(post.get("publishedAt") or "")
+    if not raw_date:
+        return True
+
+    normalized = raw_date.replace("Z", "+00:00")
+    try:
+        published_at = datetime.fromisoformat(normalized)
+    except ValueError:
+        return True
+
+    now = datetime.now(published_at.tzinfo) if published_at.tzinfo else datetime.utcnow()
+    return published_at <= now
+
+
 class BlogService:
     def __init__(self) -> None:
         self._posts_file = _posts_file_path()
@@ -100,6 +118,12 @@ class BlogService:
         if not isinstance(posts, list):
             return []
         return _sort_posts(posts)
+
+    def list_published_posts(self) -> list[dict[str, Any]]:
+        return [post for post in self.list_posts() if _is_post_publishable(post)]
+
+    def get_published_post_by_slug(self, slug: str) -> dict[str, Any] | None:
+        return next((post for post in self.list_published_posts() if post.get("slug") == slug), None)
 
     def _write_posts(self, posts: list[dict[str, Any]]) -> None:
         self._ensure_posts_file()
