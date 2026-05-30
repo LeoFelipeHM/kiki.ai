@@ -24,6 +24,7 @@ type FormState = {
   category: string;
   tags: string;
   coverImage: string;
+  coverCardImage: string;
   status: BlogPostStatus;
   author: string;
   publishedAt: string;
@@ -50,6 +51,7 @@ const emptyForm: FormState = {
   category: 'Produtividade',
   tags: '',
   coverImage: '',
+  coverCardImage: '',
   status: 'draft',
   author: 'Time Kiki',
   publishedAt: toDatetimeLocalValue(new Date()),
@@ -186,6 +188,7 @@ export function BlogAdminScreen({
       category: post.category,
       tags: post.tags.join(', '),
       coverImage: post.coverImage || '',
+      coverCardImage: post.coverCardImage || post.coverImage || '',
       status: post.status,
       author: post.author,
       publishedAt: toDatetimeLocalValue(post.publishedAt),
@@ -240,6 +243,7 @@ export function BlogAdminScreen({
       category: form.category,
       tags: form.tags,
       coverImage: form.coverImage,
+      coverCardImage: form.coverCardImage || form.coverImage,
       status: form.status,
       author: form.author,
       publishedAt: form.publishedAt,
@@ -267,13 +271,17 @@ export function BlogAdminScreen({
     setPendingCoverFile(file);
   }
 
-  async function uploadCroppedCoverImage(file: File) {
+  async function uploadCroppedCoverImage(files: { cardFile: File; articleFile: File }) {
     setIsUploading(true);
     setMessage('');
     setError('');
     try {
-      const url = await uploadAdminBlogCover(file);
-      updateField('coverImage', url);
+      const [cardUrl, articleUrl] = await Promise.all([
+        uploadAdminBlogCover(files.cardFile),
+        uploadAdminBlogCover(files.articleFile),
+      ]);
+      updateField('coverCardImage', cardUrl);
+      updateField('coverImage', articleUrl);
       setPendingCoverFile(null);
       setMessage('Imagem de capa enviada com sucesso.');
     } catch (err) {
@@ -414,7 +422,7 @@ export function BlogAdminScreen({
         )}
       </main>
       {isPreviewOpen ? <BlogPreviewModal form={form} onClose={() => setIsPreviewOpen(false)} /> : null}
-      {pendingCoverFile ? <CoverCropModal file={pendingCoverFile} onClose={() => setPendingCoverFile(null)} onConfirm={(file) => void uploadCroppedCoverImage(file)} /> : null}
+      {pendingCoverFile ? <CoverCropModal file={pendingCoverFile} onClose={() => setPendingCoverFile(null)} onConfirm={(files) => void uploadCroppedCoverImage(files)} /> : null}
     </div>
   );
 }
@@ -571,12 +579,25 @@ function PostForm({
             />
             <p className="mt-2 text-xs text-gray-500">JPG, PNG, WebP ou GIF.</p>
             {isUploading ? <p className="mt-2 text-sm text-purple-700">Enviando imagem...</p> : null}
-            {form.coverImage ? (
+            {form.coverImage || form.coverCardImage ? (
               <div className="mt-4 overflow-hidden rounded-2xl border border-gray-200 bg-white">
-                <img src={resolveBlogImageUrl(form.coverImage)} alt="" className="h-36 w-full object-cover" decoding="async" />
-                <div className="flex items-center justify-between gap-3 p-3">
+                <div className="grid gap-3 p-3 sm:grid-cols-2">
+                  {form.coverCardImage ? (
+                    <div>
+                      <p className="mb-1 text-xs font-semibold text-gray-500">Card da lista</p>
+                      <img src={resolveBlogImageUrl(form.coverCardImage)} alt="" className="aspect-[16/10] w-full rounded-xl object-cover" decoding="async" />
+                    </div>
+                  ) : null}
+                  {form.coverImage ? (
+                    <div>
+                      <p className="mb-1 text-xs font-semibold text-gray-500">Artigo aberto</p>
+                      <img src={resolveBlogImageUrl(form.coverImage)} alt="" className="aspect-[16/9] w-full rounded-xl object-cover" decoding="async" />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-gray-100 p-3">
                   <span className="truncate text-xs text-gray-500">{form.coverImage}</span>
-                  <button type="button" onClick={() => onUpdate('coverImage', '')} className="shrink-0 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200">
+                  <button type="button" onClick={() => { onUpdate('coverImage', ''); onUpdate('coverCardImage', ''); }} className="shrink-0 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200">
                     Remover
                   </button>
                 </div>
@@ -626,7 +647,7 @@ function BlogPreviewModal({ form, onClose }: { form: FormState; onClose: () => v
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-gray-950 md:text-5xl">{form.title || 'Titulo do artigo'}</h1>
           <p className="mt-4 text-lg leading-8 text-gray-600">{form.summary || 'Resumo do artigo.'}</p>
-          {form.coverImage ? <img src={resolveBlogImageUrl(form.coverImage)} alt="" className="mt-8 max-h-[70vh] w-full rounded-3xl bg-gray-50 object-contain" decoding="async" /> : null}
+          {form.coverImage ? <img src={resolveBlogImageUrl(form.coverImage)} alt="" className="mt-8 aspect-[16/9] w-full rounded-3xl object-cover" decoding="async" /> : null}
           <div className="mt-8">
             <BlogContent content={form.content || '<p>Comece a escrever seu artigo...</p>'} />
           </div>
@@ -643,13 +664,16 @@ function CoverCropModal({
 }: {
   file: File;
   onClose: () => void;
-  onConfirm: (file: File) => void;
+  onConfirm: (files: { cardFile: File; articleFile: File }) => void;
 }) {
   const [imageUrl, setImageUrl] = useState('');
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
-  const [positionX, setPositionX] = useState(50);
-  const [positionY, setPositionY] = useState(50);
-  const [zoom, setZoom] = useState(1);
+  const [cardPositionX, setCardPositionX] = useState(50);
+  const [cardPositionY, setCardPositionY] = useState(50);
+  const [cardZoom, setCardZoom] = useState(1);
+  const [articlePositionX, setArticlePositionX] = useState(50);
+  const [articlePositionY, setArticlePositionY] = useState(50);
+  const [articleZoom, setArticleZoom] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
@@ -662,8 +686,11 @@ function CoverCropModal({
     if (!imageUrl) return;
     setIsProcessing(true);
     try {
-      const croppedFile = await cropCoverImage(file, imageUrl, imageSize, { positionX, positionY, zoom });
-      onConfirm(croppedFile);
+      const [cardFile, articleFile] = await Promise.all([
+        cropCoverImage(file, imageUrl, imageSize, { positionX: cardPositionX, positionY: cardPositionY, zoom: cardZoom }, { width: 1600, height: 1000, suffix: 'card' }),
+        cropCoverImage(file, imageUrl, imageSize, { positionX: articlePositionX, positionY: articlePositionY, zoom: articleZoom }, { width: 1600, height: 900, suffix: 'artigo' }),
+      ]);
+      onConfirm({ cardFile, articleFile });
     } finally {
       setIsProcessing(false);
     }
@@ -675,38 +702,70 @@ function CoverCropModal({
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-purple-700">Capa do blog</p>
-            <h2 className="text-xl font-bold text-gray-950">Ajustar imagem para os cards</h2>
-            <p className="mt-1 text-sm text-gray-500">A moldura cinza mostra exatamente o espaco usado na capa da lista de artigos.</p>
+            <h2 className="text-xl font-bold text-gray-950">Ajustar imagem de capa</h2>
+            <p className="mt-1 text-sm text-gray-500">Ajuste separadamente como a imagem aparece nos cards e dentro do artigo.</p>
           </div>
           <button type="button" onClick={onClose} className="inline-flex size-10 items-center justify-center rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200" aria-label="Fechar ajuste de capa">
             <X className="size-5" />
           </button>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-[1fr_260px]">
-          <div className="rounded-2xl bg-gray-100 p-4">
-            <div className="relative mx-auto aspect-[16/10] max-h-[520px] overflow-hidden rounded-2xl border-2 border-gray-400/70 bg-gray-200 shadow-inner">
-              {imageUrl ? (
-                <img
-                  src={imageUrl}
-                  alt=""
-                  onLoad={(event) => setImageSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
-                  className="size-full object-cover"
-                  style={{ objectPosition: `${positionX}% ${positionY}%`, transform: `scale(${zoom})` }}
-                />
-              ) : null}
-              <div className="pointer-events-none absolute inset-0 bg-gray-950/10" />
-              <div className="pointer-events-none absolute inset-3 rounded-xl border border-white/80 shadow-[0_0_0_999px_rgba(75,85,99,0.22)]" />
-              <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-gray-950/55 px-3 py-1 text-xs font-semibold text-white">area visivel nos cards</div>
+        <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
+          <div className="space-y-5">
+            <div className="rounded-2xl bg-gray-100 p-4">
+              <p className="mb-3 text-sm font-semibold text-gray-800">1. Card da lista de artigos</p>
+              <div className="relative mx-auto aspect-[16/10] max-h-[360px] overflow-hidden rounded-2xl border-2 border-gray-400/70 bg-gray-200 shadow-inner">
+                {imageUrl ? (
+                  <img
+                    src={imageUrl}
+                    alt=""
+                    onLoad={(event) => setImageSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+                    className="size-full object-cover"
+                    style={{ objectPosition: `${cardPositionX}% ${cardPositionY}%`, transform: `scale(${cardZoom})` }}
+                  />
+                ) : null}
+                <div className="pointer-events-none absolute inset-0 bg-gray-950/10" />
+                <div className="pointer-events-none absolute inset-3 rounded-xl border border-white/80 shadow-[0_0_0_999px_rgba(75,85,99,0.22)]" />
+                <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-gray-950/55 px-3 py-1 text-xs font-semibold text-white">area visivel nos cards</div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-gray-100 p-4">
+              <p className="mb-3 text-sm font-semibold text-gray-800">2. Artigo aberto</p>
+              <div className="relative mx-auto aspect-[16/9] max-h-[360px] overflow-hidden rounded-2xl bg-gray-200 shadow-inner">
+                {imageUrl ? (
+                  <img
+                    src={imageUrl}
+                    alt=""
+                    className="size-full object-cover"
+                    style={{ objectPosition: `${articlePositionX}% ${articlePositionY}%`, transform: `scale(${articleZoom})` }}
+                  />
+                ) : null}
+                <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-gray-300" />
+                <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-gray-950/55 px-3 py-1 text-xs font-semibold text-white">como aparece dentro do artigo</div>
+              </div>
             </div>
           </div>
 
           <div className="space-y-4">
-            <ControlSlider label="Zoom" value={zoom} min={1} max={2.4} step={0.05} onChange={setZoom} />
-            <ControlSlider label="Horizontal" value={positionX} min={0} max={100} step={1} onChange={setPositionX} />
-            <ControlSlider label="Vertical" value={positionY} min={0} max={100} step={1} onChange={setPositionY} />
+            <div className="rounded-2xl border border-gray-200 p-3">
+              <p className="mb-3 text-xs font-bold uppercase text-gray-500">Card</p>
+              <div className="space-y-3">
+                <ControlSlider label="Zoom" value={cardZoom} min={1} max={2.4} step={0.05} onChange={setCardZoom} />
+                <ControlSlider label="Horizontal" value={cardPositionX} min={0} max={100} step={1} onChange={setCardPositionX} />
+                <ControlSlider label="Vertical" value={cardPositionY} min={0} max={100} step={1} onChange={setCardPositionY} />
+              </div>
+            </div>
+            <div className="rounded-2xl border border-gray-200 p-3">
+              <p className="mb-3 text-xs font-bold uppercase text-gray-500">Artigo</p>
+              <div className="space-y-3">
+                <ControlSlider label="Zoom" value={articleZoom} min={1} max={2.4} step={0.05} onChange={setArticleZoom} />
+                <ControlSlider label="Horizontal" value={articlePositionX} min={0} max={100} step={1} onChange={setArticlePositionX} />
+                <ControlSlider label="Vertical" value={articlePositionY} min={0} max={100} step={1} onChange={setArticlePositionY} />
+              </div>
+            </div>
             <div className="rounded-2xl bg-purple-50 p-4 text-xs leading-5 text-purple-900">
-              Use o ajuste para escolher o que aparece na capa da lista. No artigo aberto, a imagem sera exibida sem corte.
+              O card usa 16:10. O artigo usa 16:9 e aparece sem moldura cinza ou borda para encaixar a imagem.
             </div>
             <button type="button" disabled={isProcessing} onClick={() => void confirmCrop()} className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg disabled:opacity-60">
               {isProcessing ? 'Preparando imagem...' : 'Usar esta capa'}
@@ -813,6 +872,7 @@ function ContentEditor({
     if (!editor) return;
     if (document.activeElement === editor) return;
     editor.innerHTML = value || '';
+    normalizeEditorImageSources(editor);
     setIsEditorEmpty(isHtmlEmpty(value));
     updateToolbarState();
   }, [value]);
@@ -949,7 +1009,8 @@ function ContentEditor({
       figure.setAttribute('style', imageFigureStyle('center'));
 
       const image = document.createElement('img');
-      image.src = url;
+      image.src = resolveBlogImageUrl(url);
+      image.setAttribute('data-kiki-src', url);
       image.alt = caption;
       image.setAttribute('style', 'display:block;width:100%;max-width:720px;border-radius:18px;margin:0 auto;');
       figure.appendChild(image);
@@ -999,7 +1060,7 @@ function ContentEditor({
     syncContent();
   }
 
-  function applySelectedImageAlign(align: 'left' | 'center' | 'right' | 'inline-left') {
+  function applySelectedImageAlign(align: 'left' | 'center' | 'right' | 'inline-left' | 'inline-right') {
     const figure = selectedImage?.closest('figure');
     if (!figure) return;
     figure.setAttribute('style', imageFigureStyle(align));
@@ -1101,7 +1162,7 @@ function ContentEditor({
           <div className="flex flex-wrap items-center gap-2 border-b border-purple-100 bg-purple-50/70 p-2">
             <span className="text-xs font-semibold text-purple-900">Imagem selecionada</span>
             <ToolbarSelect label="Largura da imagem" defaultValue="" onChange={applySelectedImageWidth} options={[{ value: '', label: 'Largura' }, { value: '35%', label: '35%' }, { value: '50%', label: '50%' }, { value: '75%', label: '75%' }, { value: '100%', label: '100%' }]} />
-            <ToolbarSelect label="Posicao da imagem" defaultValue="" onChange={(selectedValue) => applySelectedImageAlign(selectedValue as 'left' | 'center' | 'right' | 'inline-left')} options={[{ value: '', label: 'Posicao' }, { value: 'left', label: 'Esquerda' }, { value: 'center', label: 'Centro' }, { value: 'right', label: 'Direita' }, { value: 'inline-left', label: 'Ao lado do texto' }]} />
+            <ToolbarSelect label="Posicao da imagem" defaultValue="" onChange={(selectedValue) => applySelectedImageAlign(selectedValue as 'left' | 'center' | 'right' | 'inline-left' | 'inline-right')} options={[{ value: '', label: 'Posicao' }, { value: 'left', label: 'Esquerda' }, { value: 'center', label: 'Centro' }, { value: 'right', label: 'Direita' }, { value: 'inline-left', label: 'Texto a direita' }, { value: 'inline-right', label: 'Texto a esquerda' }]} />
             <ToolbarButton label="Legenda" title="Editar legenda" onClick={updateSelectedImageCaption} />
             <ToolbarButton label="Remover" title="Remover imagem" onClick={removeSelectedImage} />
           </div>
@@ -1236,6 +1297,13 @@ function isHtmlEmpty(value: string) {
   return !container.textContent?.trim() && !container.querySelector('img, video, iframe');
 }
 
+function normalizeEditorImageSources(editor: HTMLElement) {
+  editor.querySelectorAll<HTMLImageElement>('img[src^="/blog-images/"]').forEach((image) => {
+    image.setAttribute('data-kiki-src', image.getAttribute('src') || '');
+    image.src = resolveBlogImageUrl(image.getAttribute('src') || '');
+  });
+}
+
 function getSelectionElements(editor: HTMLElement, range: Range) {
   if (range.collapsed) {
     const node = range.startContainer;
@@ -1357,12 +1425,13 @@ async function cropCoverImage(
   imageUrl: string,
   imageSize: { width: number; height: number },
   crop: { positionX: number; positionY: number; zoom: number },
+  output: { width: number; height: number; suffix: string },
 ) {
   const image = await loadImage(imageUrl);
   const naturalWidth = imageSize.width || image.naturalWidth;
   const naturalHeight = imageSize.height || image.naturalHeight;
-  const outputWidth = 1600;
-  const outputHeight = 1000;
+  const outputWidth = output.width;
+  const outputHeight = output.height;
   const outputRatio = outputWidth / outputHeight;
 
   let sourceWidth = naturalWidth;
@@ -1393,15 +1462,16 @@ async function cropCoverImage(
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((result) => (result ? resolve(result) : reject(new Error('Nao foi possivel cortar a imagem.'))), 'image/jpeg', 0.86);
   });
-  const fileName = `${originalFile.name.replace(/\.[^.]+$/, '') || 'capa-blog'}-capa.jpg`;
+  const fileName = `${originalFile.name.replace(/\.[^.]+$/, '') || 'capa-blog'}-${output.suffix}.jpg`;
   return new File([blob], fileName, { type: 'image/jpeg' });
 }
 
-function imageFigureStyle(align: 'left' | 'center' | 'right' | 'inline-left') {
+function imageFigureStyle(align: 'left' | 'center' | 'right' | 'inline-left' | 'inline-right') {
   const base = 'max-width:720px;text-align:center;';
   if (align === 'left') return `${base}margin:28px auto 28px 0;clear:both;`;
   if (align === 'right') return `${base}margin:28px 0 28px auto;clear:both;`;
   if (align === 'inline-left') return 'float:left;width:44%;max-width:360px;margin:8px 24px 16px 0;text-align:left;';
+  if (align === 'inline-right') return 'float:right;width:44%;max-width:360px;margin:8px 0 16px 24px;text-align:left;';
   return `${base}margin:28px auto;clear:both;`;
 }
 

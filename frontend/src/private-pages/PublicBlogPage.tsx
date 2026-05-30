@@ -147,8 +147,8 @@ function BlogListView({
 function BlogCard({ post }: { post: BlogPost }) {
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-xl hover:shadow-gray-900/5">
-      {post.coverImage ? (
-        <img src={resolveBlogImageUrl(post.coverImage)} alt="" className="aspect-[16/10] w-full object-cover" loading="lazy" decoding="async" />
+      {post.coverCardImage || post.coverImage ? (
+        <img src={resolveBlogImageUrl(post.coverCardImage || post.coverImage)} alt="" className="aspect-[16/10] w-full object-cover" loading="lazy" decoding="async" />
       ) : null}
       <div className="flex flex-1 flex-col p-5">
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -210,7 +210,7 @@ function ArticleView({ state, onRetry }: { state: LoadState; onRetry: () => void
             alt=""
             loading="eager"
             decoding="async"
-            className="mb-10 max-h-[72vh] w-full rounded-2xl border border-gray-100 bg-gray-50 object-contain"
+            className="mb-10 aspect-[16/9] w-full rounded-2xl object-cover"
           />
         ) : null}
 

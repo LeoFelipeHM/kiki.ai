@@ -67,7 +67,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
           </Link>
 
           {post.coverImage ? (
-            <div className="relative mb-10 aspect-[16/9] overflow-hidden rounded-3xl border border-gray-100 shadow-xl shadow-purple-900/5">
+            <div className="relative mb-10 aspect-[16/9] overflow-hidden rounded-3xl">
               <Image
                 src={post.coverImage}
                 alt=""

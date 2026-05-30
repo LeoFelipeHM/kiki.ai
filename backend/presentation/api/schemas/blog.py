@@ -14,6 +14,7 @@ class BlogPostRequest(BaseModel):
     category: str = Field(min_length=1)
     tags: list[str] | str | None = None
     coverImage: str | None = None
+    coverCardImage: str | None = None
     status: BlogPostStatus
     author: str | None = None
     publishedAt: str | None = None
@@ -28,6 +29,7 @@ class BlogPostResponse(BaseModel):
     category: str
     tags: list[str]
     coverImage: str | None = None
+    coverCardImage: str | None = None
     status: BlogPostStatus
     author: str
     publishedAt: str

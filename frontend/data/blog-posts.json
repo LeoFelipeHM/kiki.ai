@@ -1,18 +1,19 @@
 [
   {
-    "id": "8a6c06b0-2147-4887-87db-e222019dd7b3",
+    "id": "3e8d5b55-5e9c-46de-9087-b4117e953626",
     "title": "teste",
-    "slug": "tes1",
-    "summary": "teste",
-    "content": "<figure data-kiki-image=\"true\" style=\"max-width:720px;text-align:center;margin:28px auto;clear:both;\"><img src=\"/blog-images/group-1-4a2571f543.png\" alt=\"\" style=\"display:block;width:100%;max-width:720px;border-radius:18px;margin:0 auto;\"></figure><p><br></p>teste",
-    "category": "teste",
+    "slug": "teste",
+    "summary": "cdavd afdv",
+    "content": "<h2 style=\"font-size: 26px; font-weight: 700; line-height: 1.3;\" data-kiki-text-style=\"TITLE\"><figure data-kiki-image=\"true\" style=\"max-width:720px;text-align:center;margin:28px auto;clear:both;\"><img src=\"/blog-images/group-1-1-d6d31b886a.png\" alt=\"\" style=\"display:block;width:100%;max-width:720px;border-radius:18px;margin:0 auto;\"></figure><p><br></p><br></h2>",
+    "category": "Produtividade",
     "tags": [],
-    "coverImage": "/blog-images/group-1-e7b3cdc874.png",
+    "coverImage": "/blog-images/group-1-artigo-4cea52ba3e.jpg",
+    "coverCardImage": "/blog-images/group-1-card-cd8179c895.jpg",
     "status": "published",
     "author": "Time Kiki",
-    "publishedAt": "2026-05-26T00:00",
-    "createdAt": "2026-05-26T15:11:14.866Z",
-    "updatedAt": "2026-05-29T18:47:06.538Z"
+    "publishedAt": "2026-05-29T21:24",
+    "createdAt": "2026-05-30T00:37:37.978Z",
+    "updatedAt": "2026-05-30T00:37:39.469Z"
   },
   {
     "id": "kiki-rotina-inteligente",
