@@ -69,6 +69,21 @@ const emptyToolbarState: ToolbarState = {
   orderedList: false,
 };
 
+const textStylePresets: Record<string, { label: string; tag: 'P' | 'H1' | 'H2' | 'H3' | 'H4'; fontSize: number; fontWeight: number; lineHeight: number }> = {
+  P: { label: 'Texto normal', tag: 'P', fontSize: 16, fontWeight: 400, lineHeight: 1.6 },
+  TITLE: { label: 'Título', tag: 'H2', fontSize: 26, fontWeight: 700, lineHeight: 1.3 },
+  SUBTITLE: { label: 'Subtítulo', tag: 'P', fontSize: 20, fontWeight: 500, lineHeight: 1.4 },
+  H1: { label: 'Título 1', tag: 'H1', fontSize: 32, fontWeight: 700, lineHeight: 1.25 },
+  H2: { label: 'Título 2', tag: 'H2', fontSize: 26, fontWeight: 700, lineHeight: 1.3 },
+  H3: { label: 'Título 3', tag: 'H3', fontSize: 22, fontWeight: 600, lineHeight: 1.35 },
+  H4: { label: 'Título 4', tag: 'H4', fontSize: 18, fontWeight: 600, lineHeight: 1.4 },
+};
+
+const textStyleOptions = [
+  { value: '', label: '-' },
+  ...Object.entries(textStylePresets).map(([value, preset]) => ({ value, label: preset.label })),
+];
+
 function publicBlogUrl() {
   if (typeof window === 'undefined') return '/blog';
   return `${window.location.origin}/blog`;
@@ -871,7 +886,25 @@ function ContentEditor({
     restoreSelection();
     document.execCommand(command, false, commandValue);
     syncContent();
-    window.setTimeout(updateToolbarState, 0);
+    updateToolbarState();
+  }
+
+  function applyTextStyle(styleKey: string) {
+    const editor = editorRef.current;
+    const preset = textStylePresets[styleKey];
+    if (!editor || !preset) return;
+
+    editor.focus();
+    restoreSelection();
+    document.execCommand('formatBlock', false, preset.tag);
+
+    const selection = window.getSelection();
+    const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : savedRangeRef.current;
+    const blocks = range ? getSelectionBlocks(editor, range) : [];
+    blocks.forEach((block) => applyTextStylePreset(block, styleKey));
+
+    syncContent();
+    updateToolbarState();
   }
 
   function insertLink() {
@@ -897,6 +930,7 @@ function ContentEditor({
       (element as HTMLElement).style.fontSize = `${size}px`;
     });
     syncContent();
+    updateToolbarState();
   }
 
   function applyTextColor(color: string) {
@@ -1005,6 +1039,7 @@ function ContentEditor({
     const editor = editorRef.current;
     if (!editor || editor.innerHTML.trim()) return;
     editor.innerHTML = '<p><br></p>';
+    applyTextStylePreset(editor.firstElementChild as HTMLElement, 'P');
     const range = document.createRange();
     range.selectNodeContents(editor.firstChild || editor);
     range.collapse(true);
@@ -1026,7 +1061,7 @@ function ContentEditor({
       <span className="mb-2 block text-sm font-medium text-gray-700">Conteúdo</span>
       <div className="overflow-hidden rounded-2xl border border-gray-300 bg-white focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-100">
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50 p-2">
-          <ToolbarSelect label="Estilo" defaultValue="P" value={toolbarState.block} onChange={(selectedValue) => runCommand('formatBlock', selectedValue)} options={[{ value: '', label: '-' }, { value: 'P', label: 'Texto normal' }, { value: 'H1', label: 'Título 1' }, { value: 'H2', label: 'Título 2' }, { value: 'H3', label: 'Título 3' }, { value: 'H4', label: 'Subtítulo' }]} />
+          <ToolbarSelect label="Estilo" defaultValue="P" value={toolbarState.block} onChange={applyTextStyle} options={textStyleOptions} />
           <ToolbarSelect label="Fonte" defaultValue="" value={toolbarState.font} onChange={(selectedValue) => runCommand('fontName', selectedValue)} options={[{ value: '', label: '-' }, { value: 'Arial', label: 'Arial' }, { value: 'Inter', label: 'Inter' }, { value: 'Georgia', label: 'Georgia' }, { value: 'Times New Roman', label: 'Times' }, { value: 'Verdana', label: 'Verdana' }, { value: 'monospace', label: 'Mono' }]} />
           <FontSizeControl value={toolbarState.fontSize} onApply={applyFontSize} />
           <ColorControl value={toolbarState.color} onApply={applyTextColor} />
@@ -1123,17 +1158,45 @@ function FontSizeControl({ value, onApply }: { value: string; onApply: (value: s
     setDraftValue(value || '');
   }, [value]);
 
-  function applyValue() {
-    const size = Number(draftValue);
+  function applyValue(nextValue = draftValue) {
+    const size = Number(nextValue);
     if (!Number.isFinite(size) || size < 8 || size > 96) return;
     onApply(String(size));
+  }
+
+  function stepSize(direction: 1 | -1) {
+    const currentSize = Number(draftValue || value || 16);
+    const nextSize = Math.min(96, Math.max(8, currentSize + direction));
+    setDraftValue(String(nextSize));
+    onApply(String(nextSize));
   }
 
   return (
     <label className="flex h-8 items-center gap-1 rounded-full border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-700 shadow-sm">
       <span className="sr-only">Tamanho da fonte</span>
-      <input type="text" inputMode="numeric" placeholder="-" value={draftValue} onChange={(event) => setDraftValue(event.target.value.replace(/\D/g, ''))} onBlur={applyValue} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); applyValue(); } }} className="h-6 w-12 bg-transparent text-center outline-none placeholder:text-purple-400" />
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="-"
+        value={draftValue}
+        onChange={(event) => {
+          const nextValue = event.target.value.replace(/\D/g, '');
+          setDraftValue(nextValue);
+          if (nextValue) applyValue(nextValue);
+        }}
+        onBlur={() => applyValue()}
+        onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); applyValue(); } }}
+        className="h-6 w-10 bg-transparent text-center outline-none placeholder:text-purple-400"
+      />
       <span>px</span>
+      <span className="ml-1 flex flex-col overflow-hidden rounded-md border border-gray-200">
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => stepSize(1)} className="grid h-3.5 w-5 place-items-center text-[9px] leading-none text-gray-600 hover:bg-purple-50 hover:text-purple-700" aria-label="Aumentar fonte">
+          ▲
+        </button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => stepSize(-1)} className="grid h-3.5 w-5 place-items-center border-t border-gray-200 text-[9px] leading-none text-gray-600 hover:bg-purple-50 hover:text-purple-700" aria-label="Diminuir fonte">
+          ▼
+        </button>
+      </span>
     </label>
   );
 }
@@ -1160,7 +1223,7 @@ function ColorControl({ value, onApply }: { value: string; onApply: (value: stri
 
 function ToolbarButton({ label, onClick, title, active }: { label: string; onClick: () => void; title?: string; active?: boolean }) {
   return (
-    <button type="button" title={title} aria-label={title || label} aria-pressed={active} onClick={onClick} className={`h-8 rounded-full px-3 text-xs font-semibold shadow-sm ring-1 transition hover:bg-purple-50 hover:text-purple-700 ${active ? 'bg-purple-100 text-purple-800 ring-purple-200' : 'bg-white text-gray-700 ring-gray-200'}`}>
+    <button type="button" title={title} aria-label={title || label} aria-pressed={active} onMouseDown={(event) => event.preventDefault()} onClick={onClick} className={`h-8 rounded-full px-3 text-xs font-semibold shadow-sm ring-1 transition hover:bg-purple-50 hover:text-purple-700 ${active ? 'bg-purple-100 text-purple-800 ring-purple-200' : 'bg-white text-gray-700 ring-gray-200'}`}>
       {label}
     </button>
   );
@@ -1210,9 +1273,36 @@ function getUniformValue(values: string[]) {
   return normalized.every((value) => value === normalized[0]) ? normalized[0] : '';
 }
 
+function getSelectionBlocks(editor: HTMLElement, range: Range) {
+  const elements = getSelectionElements(editor, range);
+  const blocks = elements
+    .map((element) => element.closest('h1,h2,h3,h4,p,div,li'))
+    .filter((element): element is HTMLElement => element instanceof HTMLElement && element !== editor);
+
+  if (!blocks.length) {
+    const node = range.startContainer;
+    const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+    const block = element?.closest('h1,h2,h3,h4,p,div,li');
+    return block instanceof HTMLElement && block !== editor ? [block] : [];
+  }
+
+  return Array.from(new Set(blocks));
+}
+
+function applyTextStylePreset(block: HTMLElement | null, styleKey: string) {
+  const preset = textStylePresets[styleKey];
+  if (!block || !preset) return;
+  block.dataset.kikiTextStyle = styleKey;
+  block.style.fontSize = `${preset.fontSize}px`;
+  block.style.fontWeight = String(preset.fontWeight);
+  block.style.lineHeight = String(preset.lineHeight);
+}
+
 function getBlockValue(element: Element, editor: HTMLElement) {
   const block = element.closest('h1,h2,h3,h4,p,div,li');
   if (!block || block === editor) return 'P';
+  const savedStyle = (block as HTMLElement).dataset.kikiTextStyle;
+  if (savedStyle && textStylePresets[savedStyle]) return savedStyle;
   const tag = block.tagName.toUpperCase();
   if (tag === 'LI') return 'P';
   return ['H1', 'H2', 'H3', 'H4'].includes(tag) ? tag : 'P';
