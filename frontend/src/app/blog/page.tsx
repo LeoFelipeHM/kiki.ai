@@ -48,10 +48,10 @@ export default async function BlogPage() {
               {posts.map((post) => (
                 <div key={post.id} data-blog-post-card data-post-id={post.id} data-post-slug={post.slug}>
                 <Card>
-                  {post.coverImage ? (
+                  {post.coverCardImage || post.coverImage ? (
                     <div className="relative -mx-6 -mt-6 mb-5 aspect-[16/10] overflow-hidden rounded-t-2xl md:-mx-8 md:-mt-8 md:rounded-t-3xl">
                       <Image
-                        src={post.coverImage}
+                        src={post.coverCardImage || post.coverImage || ''}
                         alt=""
                         fill
                         sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"

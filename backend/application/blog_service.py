@@ -42,6 +42,10 @@ def _upload_dir() -> Path:
     return _frontend_root() / "public" / "blog-images"
 
 
+def blog_images_dir() -> Path:
+    return _upload_dir()
+
+
 def slugify(value: str) -> str:
     normalized = unicodedata.normalize("NFD", value)
     without_marks = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
@@ -144,6 +148,7 @@ class BlogService:
             "category": str(payload.get("category") or "Kiki").strip(),
             "tags": parse_tags(payload.get("tags")),
             "coverImage": str(payload.get("coverImage") or "").strip(),
+            "coverCardImage": str(payload.get("coverCardImage") or payload.get("coverImage") or "").strip(),
             "status": payload["status"],
             "author": str(payload.get("author") or "Time Kiki").strip(),
             "publishedAt": _normalize_published_at(payload.get("publishedAt")) or now,
@@ -170,6 +175,7 @@ class BlogService:
             "category": str(payload.get("category") or "Kiki").strip(),
             "tags": parse_tags(payload.get("tags")),
             "coverImage": str(payload.get("coverImage") or "").strip(),
+            "coverCardImage": str(payload.get("coverCardImage") or payload.get("coverImage") or "").strip(),
             "status": payload["status"],
             "author": str(payload.get("author") or current.get("author") or "Time Kiki").strip(),
             "publishedAt": _normalize_published_at(payload.get("publishedAt")) or current.get("publishedAt"),

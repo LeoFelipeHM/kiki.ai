@@ -9,6 +9,7 @@ export type BlogPost = {
   category: string;
   tags: string[];
   coverImage?: string;
+  coverCardImage?: string;
   status: BlogPostStatus;
   author: string;
   publishedAt: string;
@@ -24,6 +25,7 @@ export type BlogPostInput = {
   category: string;
   tags?: string[] | string;
   coverImage?: string;
+  coverCardImage?: string;
   status: BlogPostStatus;
   author?: string;
   publishedAt?: string;

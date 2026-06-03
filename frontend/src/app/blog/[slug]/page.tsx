@@ -66,6 +66,19 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
             Voltar para o blog
           </Link>
 
+          {post.coverImage ? (
+            <div className="relative mb-10 aspect-[16/9] overflow-hidden rounded-3xl">
+              <Image
+                src={post.coverImage}
+                alt=""
+                fill
+                sizes="(min-width: 768px) 768px, 100vw"
+                priority
+                className="object-cover"
+              />
+            </div>
+          ) : null}
+
           <header className="mb-10">
             <div className="flex flex-wrap items-center gap-3 mb-5">
               <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700">
@@ -83,19 +96,6 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
               <time dateTime={post.publishedAt}>{formatDate(post.publishedAt)}</time>
             </div>
           </header>
-
-          {post.coverImage ? (
-            <div className="relative mb-10 aspect-[16/9] overflow-hidden rounded-3xl border border-gray-100 shadow-xl shadow-purple-900/5">
-              <Image
-                src={post.coverImage}
-                alt=""
-                fill
-                sizes="(min-width: 768px) 768px, 100vw"
-                priority
-                className="object-cover"
-              />
-            </div>
-          ) : null}
 
           <BlogContent content={post.content} />
 

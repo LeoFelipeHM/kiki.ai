@@ -3,7 +3,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
+from application.blog_service import blog_images_dir
 from application.notification_dispatcher import NotificationDispatcher
 from infrastructure.config import load_settings
 from presentation.api.routers import (
@@ -103,6 +105,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/blog-images", StaticFiles(directory=blog_images_dir(), check_dir=False), name="blog-images")
 
 app.include_router(health.router)
 app.include_router(auth.router)

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, CalendarDays, Clock, Loader2, Search } from 'lucide-react';
 import { BlogContent } from '@/app/blog/BlogContent';
+import { resolveBlogImageUrl } from '@/app/blog/blog-media';
 import type { BlogPost } from '@/app/blog/blog-types';
 import { estimateReadingTime, formatDate, isPostPublishable } from '@/app/blog/blog-utils';
 import { listPublishedBlogPosts, getPublishedBlogPost } from '@/services/blogPublic';
@@ -113,27 +114,18 @@ function BlogListView({
 }) {
   return (
     <main className="pb-16">
-      <section className="px-5 pb-10 pt-14 md:px-8 md:pb-14 md:pt-20">
-        <div className="mx-auto max-w-4xl text-center">
-          <p className="mb-3 text-sm font-semibold text-purple-700">Blog</p>
-          <h1 className="mb-4 text-4xl font-bold tracking-tight text-gray-900 md:text-5xl">
-            Ideias para uma rotina mais leve
-          </h1>
-          <p className="mx-auto max-w-2xl text-base leading-7 text-gray-600 md:text-lg">
-            Artigos publicados pela equipe Kiki sobre organizacao, produtividade e formas inteligentes de cuidar do dia a dia.
-          </p>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-5 md:px-8">
-        <div className="mb-6 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-          <Search className="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />
-          <input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Buscar artigos"
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
-          />
+      <section className="mx-auto max-w-6xl px-5 pt-12 md:px-8 md:pt-16">
+        <div className="mb-8 flex flex-col gap-8">
+          <h1 className="text-6xl font-bold tracking-tight text-purple-700 md:text-7xl">Blog</h1>
+          <div className="flex w-full items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <Search className="h-5 w-5 shrink-0 text-gray-400" aria-hidden="true" />
+            <input
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="Buscar artigos"
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400"
+            />
+          </div>
         </div>
 
         {state.status === 'loading' ? <LoadingBlock label="Carregando artigos..." /> : null}
@@ -155,8 +147,8 @@ function BlogListView({
 function BlogCard({ post }: { post: BlogPost }) {
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-xl hover:shadow-gray-900/5">
-      {post.coverImage ? (
-        <img src={post.coverImage} alt="" className="aspect-[16/10] w-full object-cover" loading="lazy" />
+      {post.coverCardImage || post.coverImage ? (
+        <img src={resolveBlogImageUrl(post.coverCardImage || post.coverImage)} alt="" className="aspect-[16/10] w-full object-cover" loading="lazy" decoding="async" />
       ) : null}
       <div className="flex flex-1 flex-col p-5">
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -212,6 +204,16 @@ function ArticleView({ state, onRetry }: { state: LoadState; onRetry: () => void
           Voltar para o blog
         </Link>
 
+        {post.coverImage ? (
+          <img
+            src={resolveBlogImageUrl(post.coverImage)}
+            alt=""
+            loading="eager"
+            decoding="async"
+            className="mb-10 aspect-[16/9] w-full rounded-2xl object-cover"
+          />
+        ) : null}
+
         <header className="mb-10">
           <div className="mb-5 flex flex-wrap items-center gap-3">
             <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700">
@@ -232,14 +234,6 @@ function ArticleView({ state, onRetry }: { state: LoadState; onRetry: () => void
             <time dateTime={post.publishedAt}>{formatDate(post.publishedAt)}</time>
           </div>
         </header>
-
-        {post.coverImage ? (
-          <img
-            src={post.coverImage}
-            alt=""
-            className="mb-10 aspect-[16/9] w-full rounded-2xl border border-gray-100 object-cover shadow-xl shadow-purple-900/5"
-          />
-        ) : null}
 
         <BlogContent content={post.content} />
 
