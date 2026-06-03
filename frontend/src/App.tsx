@@ -186,6 +186,7 @@ function AppRoutes() {
     (location.pathname === ROUTES.landing ||
       location.pathname === ROUTES.blog ||
       location.pathname.startsWith(`${ROUTES.blog}/`));
+  const shouldUseMobileFrame = !isAuthLoading && !isAuthenticated && !isPublicFullWidthPage;
 
   /** Marketing e blog publico ficam sempre em light. */
   const shellIsDark = appearance === 'dark' && !isPublicFullWidthPage;
@@ -224,7 +225,7 @@ function AppRoutes() {
   return (
     <ThemeProvider themeColor={themeColor} appearance={appearance}>
       <div
-        className={`size-full flex flex-col bg-background ${isPublicFullWidthPage ? 'w-full' : 'max-w-md mx-auto'} ${shellIsDark ? 'dark' : ''}`}
+        className={`size-full flex flex-col bg-background ${shouldUseMobileFrame ? 'max-w-md mx-auto' : 'w-full'} ${shellIsDark ? 'dark' : ''}`}
       >
         {isAuthLoading ? (
           <div className="size-full flex items-center justify-center">
