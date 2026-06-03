@@ -21,10 +21,12 @@ class ToolAgentError(Exception):
     pass
 
 
-def _client(api_key: str | None) -> OpenAI:
+def _client(api_key: str | None, *, timeout_seconds: float | None = None) -> OpenAI:
     key = (api_key or os.getenv("OPENAI_API_KEY") or "").strip()
     if not key:
         raise ToolAgentError("OPENAI_API_KEY não configurada.")
+    if timeout_seconds is not None and timeout_seconds > 0:
+        return OpenAI(api_key=key, timeout=timeout_seconds)
     return OpenAI(api_key=key)
 
 
@@ -54,8 +56,8 @@ def _web_search_tool(user_timezone: str | None) -> dict[str, Any]:
     }
 
 
-def _reasoning_param(model: str) -> dict[str, Any]:
-    raw = (os.getenv("OPENAI_REASONING_EFFORT") or "").strip().lower()
+def _reasoning_param(model: str, effort: str | None = None) -> dict[str, Any]:
+    raw = (effort or os.getenv("OPENAI_REASONING_EFFORT") or "").strip().lower()
     if not raw:
         return {}
     allowed = ("none", "minimal", "low", "medium", "high", "xhigh")
@@ -72,14 +74,17 @@ def run_tool_agent(
     calendar_service: Any,
     notes_service: Any,
     contacts_service: Any = None,
+    agents_service: Any = None,
     api_key: str | None = None,
     model: str | None = None,
     additional_system_context: str | None = None,
     latest_input_image_data_url: str | None = None,
     max_tool_turns: int = DEFAULT_MAX_TOOL_TURNS,
+    reasoning_effort: str | None = None,
+    request_timeout_seconds: float | None = None,
 ) -> str:
     """Responses API: web_search (provedor) + function tools (calendário/notas)."""
-    client = _client(api_key)
+    client = _client(api_key, timeout_seconds=request_timeout_seconds)
     mdl = _responses_model(model)
 
     tools = [_web_search_tool(current_user_timezone)] + tools_schema_responses()
@@ -124,7 +129,7 @@ def run_tool_agent(
                 "truncation": "auto",
                 "parallel_tool_calls": True,
             }
-            kwargs.update(_reasoning_param(mdl))
+            kwargs.update(_reasoning_param(mdl, reasoning_effort))
 
             if previous_response_id is None:
                 instructions = build_kiki_system_instructions(current_user_timezone)
@@ -167,6 +172,7 @@ def run_tool_agent(
                         calendar_service=calendar_service,
                         notes_service=notes_service,
                         contacts_service=contacts_service,
+                        agents_service=agents_service,
                     )
                     outputs.append(
                         {
@@ -200,6 +206,7 @@ def run_tool_agent_stream(
     calendar_service: Any,
     notes_service: Any,
     contacts_service: Any = None,
+    agents_service: Any = None,
     api_key: str | None = None,
     model: str | None = None,
     additional_system_context: str | None = None,
@@ -212,6 +219,7 @@ def run_tool_agent_stream(
         calendar_service=calendar_service,
         notes_service=notes_service,
         contacts_service=contacts_service,
+        agents_service=agents_service,
         api_key=api_key,
         model=model,
         additional_system_context=additional_system_context,

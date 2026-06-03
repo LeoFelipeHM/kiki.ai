@@ -91,3 +91,47 @@ class ContactsRepository(Protocol):
     ) -> dict[str, Any] | None: ...
 
     def delete_contact(self, user_id: str, contact_id: str) -> bool: ...
+
+
+class AgentsRepository(Protocol):
+    def list_agents(self, user_id: str) -> list[dict[str, Any]]: ...
+
+    def create_agent(
+        self,
+        user_id: str,
+        *,
+        name: str,
+        agent_type: str,
+        task: str,
+        effort: str,
+        color: str,
+        sort_order: int,
+        steps: list[str],
+    ) -> dict[str, Any]: ...
+
+    def get_agent(self, user_id: str, agent_id: str) -> dict[str, Any] | None: ...
+
+    def update_agent_effort(
+        self,
+        user_id: str,
+        agent_id: str,
+        effort: str,
+        steps: list[str] | None,
+    ) -> dict[str, Any] | None: ...
+
+    def set_agent_status(
+        self,
+        user_id: str,
+        agent_id: str,
+        status: str,
+        *,
+        current_action: str | None = None,
+    ) -> dict[str, Any] | None: ...
+
+    def delete_agent(self, user_id: str, agent_id: str) -> bool: ...
+
+    def reorder_agents(self, user_id: str, agent_ids: list[str]) -> list[dict[str, Any]]: ...
+
+    def list_messages(self, user_id: str, agent_id: str) -> list[dict[str, Any]] | None: ...
+
+    def create_message(self, user_id: str, agent_id: str, role: str, content: str) -> dict[str, Any] | None: ...

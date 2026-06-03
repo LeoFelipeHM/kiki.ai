@@ -18,9 +18,11 @@ from openai.types import realtime as openai_realtime_types
 from psycopg.rows import dict_row
 
 from application.azure_voice_ids import AZURE_PT_BR_VOICE_IDS_FROZEN
+from application.agents_service import AgentsService
 from application.calendar_service import CalendarService
 from application.contacts_service import ContactsService
 from application.notes_service import NotesService
+from infrastructure.persistence.postgres_agents_repository import PostgresAgentsRepository
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
 from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
@@ -50,7 +52,11 @@ KIKI_VOICE_VIDEO_CONTEXT = (
     "em tempo real por frames recentes. Use esse contexto visual somente quando houver "
     "imagem recebida na sessão."
 )
-KIKI_VOICE_INSTRUCTIONS = f"{KIKI_SYSTEM_PROMPT}\n\n{KIKI_VOICE_VIDEO_CONTEXT}"
+KIKI_VOICE_AGENT_CONTEXT = (
+    "Quando falar sobre agentes ou tarefas autônomas no modo de voz, refira-se sempre "
+    "pelo nome/título da tarefa. Nunca fale UUIDs, IDs internos ou códigos técnicos para o usuário."
+)
+KIKI_VOICE_INSTRUCTIONS = f"{KIKI_SYSTEM_PROMPT}\n\n{KIKI_VOICE_VIDEO_CONTEXT}\n\n{KIKI_VOICE_AGENT_CONTEXT}"
 
 
 def _user_id_from_room_name(room_name: str) -> str | None:
@@ -324,6 +330,7 @@ class KikiVoiceAssistant(BaseKikiVoiceAssistant):
                 self,
             )
             contacts_service = ContactsService(conn, PostgresContactsRepository(conn))
+            agents_service = AgentsService(conn, PostgresAgentsRepository(conn))
             reply = generate_reply_with_tools(
                 pairs,
                 current_user_id=self._user_id,
@@ -331,6 +338,7 @@ class KikiVoiceAssistant(BaseKikiVoiceAssistant):
                 calendar_service=calendar_service,
                 notes_service=notes_service,
                 contacts_service=contacts_service,
+                agents_service=agents_service,
                 additional_system_context=self.voice_session_context(),
                 latest_input_image_data_url=self.latest_camera_image_data_url(),
             )

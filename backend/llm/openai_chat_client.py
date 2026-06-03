@@ -62,10 +62,14 @@ def generate_reply_with_tools(
     calendar_service: Any,
     notes_service: Any,
     contacts_service: Any = None,
+    agents_service: Any = None,
     api_key: str | None = None,
     model: str | None = None,
     additional_system_context: str | None = None,
     latest_input_image_data_url: str | None = None,
+    reasoning_effort: str | None = None,
+    max_tool_turns: int = 6,
+    request_timeout_seconds: float | None = None,
 ) -> str:
     """Próxima mensagem do assistente (OpenAI Responses API) com web_search + tool-calling para calendário/notas/contatos."""
     try:
@@ -76,10 +80,14 @@ def generate_reply_with_tools(
             calendar_service=calendar_service,
             notes_service=notes_service,
             contacts_service=contacts_service,
+            agents_service=agents_service,
             api_key=api_key,
             model=model,
             additional_system_context=additional_system_context,
             latest_input_image_data_url=latest_input_image_data_url,
+            reasoning_effort=reasoning_effort,
+            max_tool_turns=max_tool_turns,
+            request_timeout_seconds=request_timeout_seconds,
         )
     except ToolAgentError as exc:
         raise OpenAIChatCompletionError(str(exc)) from exc
@@ -93,6 +101,7 @@ def generate_reply_stream_with_tools(
     calendar_service: Any,
     notes_service: Any,
     contacts_service: Any = None,
+    agents_service: Any = None,
     api_key: str | None = None,
     model: str | None = None,
     additional_system_context: str | None = None,
@@ -107,6 +116,7 @@ def generate_reply_stream_with_tools(
             calendar_service=calendar_service,
             notes_service=notes_service,
             contacts_service=contacts_service,
+            agents_service=agents_service,
             api_key=api_key,
             model=model,
             additional_system_context=additional_system_context,

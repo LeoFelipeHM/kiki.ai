@@ -15,6 +15,9 @@ ToolName = Literal[
     "contacts_create_contact",
     "contacts_update_contact",
     "contacts_delete_contact",
+    "agents_list_agents",
+    "agents_create_agent",
+    "agents_authorize_agent",
 ]
 
 
@@ -261,6 +264,61 @@ def tools_schema() -> list[dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "agents_list_agents",
+                "description": "Lista os agentes autônomos do usuário por nome/título, incluindo status, tarefa e progresso. Use o nome do agente ao falar com o usuário; não mencione IDs.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "agents_create_agent",
+                "description": "Cria um agente autônomo planejado para uma tarefa. O agente ainda aguardará autorização antes de executar. Ao responder ao usuário, refira-se ao agente pelo título gerado, não por ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task": {"type": "string", "description": "Tarefa completa que o agente deve planejar e executar."},
+                        "type": {
+                            "type": "string",
+                            "enum": ["research", "shopping", "travel", "custom"],
+                            "description": "Tipo do agente. Use custom quando não houver encaixe claro.",
+                        },
+                        "effort": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                            "description": "Nível de pensamento: low=baixo, medium=médio, high=muito.",
+                        },
+                        "name": {"type": ["string", "null"], "description": "Nome opcional para o agente."},
+                    },
+                    "required": ["task"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "agents_authorize_agent",
+                "description": "Autoriza um agente planejado/pausado/com erro a entrar na fila de execução. Prefira informar agent_name, usando o nome/título do agente dito pelo usuário ou retornado na listagem. Não peça nem fale IDs ao usuário.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "agent_name": {"type": ["string", "null"], "description": "Nome/título do agente a autorizar."},
+                        "agent_id": {"type": ["string", "null"], "description": "Uso interno apenas quando já estiver disponível; prefira agent_name."},
+                    },
+                    "required": [],
+                    "additionalProperties": False,
+                },
+            },
+        },
     ]
 
 
@@ -279,4 +337,3 @@ def tools_schema_responses() -> list[dict[str, Any]]:
             }
         )
     return result
-

@@ -7,6 +7,8 @@ export const ROUTES = {
   login: '/login',
   home: '/home',
   chat: '/chat',
+  agents: '/agents',
+  agentDetail: (agentId: string) => `/agents/${agentId}`,
   calendar: '/calendar',
   notes: '/notes',
   contacts: '/contacts',
@@ -28,5 +30,6 @@ export const ROUTES = {
 /** Rotas com parâmetros (pattern React Router) */
 export const ROUTE_PATTERNS = {
   profileEdit: '/profile/editar/:slug',
+  agentDetail: '/agents/:agentId',
   integration: '/integracao/:slug',
 } as const;

@@ -11,7 +11,9 @@ from psycopg.rows import dict_row
 
 from application.calendar_service import CalendarService
 from application.contacts_service import ContactsService
+from application.agents_service import AgentsService
 from application.notes_service import NotesService
+from infrastructure.persistence.postgres_agents_repository import PostgresAgentsRepository
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
 from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
@@ -27,6 +29,7 @@ from presentation.api.dependencies import (
     CurrentUserDep,
     DbConnDep,
     get_calendar_service,
+    get_agents_service,
     get_contacts_service,
     get_notes_service,
     settings,
@@ -78,6 +81,7 @@ def transcribe_chat_audio(
 CalendarServiceDep = Annotated[CalendarService, Depends(get_calendar_service)]
 NotesServiceDep = Annotated[NotesService, Depends(get_notes_service)]
 ContactsServiceDep = Annotated[ContactsService, Depends(get_contacts_service)]
+AgentsServiceDep = Annotated[AgentsService, Depends(get_agents_service)]
 
 # Enquanto o agente (tools + LLM) trabalha sem emitir deltas, proxies costumam cortar a conexão (~60s).
 _SSE_KEEPALIVE = float(os.getenv("SSE_KEEPALIVE_SECONDS", "12").strip() or "12")
@@ -116,6 +120,7 @@ def chat_completion_stream(
                 calendar_service = CalendarService(conn, PostgresCalendarRepository(conn))
                 notes_service = NotesService(conn, PostgresNotesRepository(conn))
                 contacts_service = ContactsService(conn, PostgresContactsRepository(conn))
+                agents_service = AgentsService(conn, PostgresAgentsRepository(conn))
 
                 stream = generate_reply_stream_with_tools(
                     pairs,
@@ -124,6 +129,7 @@ def chat_completion_stream(
                     calendar_service=calendar_service,
                     notes_service=notes_service,
                     contacts_service=contacts_service,
+                    agents_service=agents_service,
                 )
                 for delta in stream:
                     result_queue.put(("delta", delta))
@@ -202,6 +208,7 @@ def chat_completion(
     calendar_service: CalendarServiceDep,
     notes_service: NotesServiceDep,
     contacts_service: ContactsServiceDep,
+    agents_service: AgentsServiceDep,
 ):
     if not os.getenv("OPENAI_API_KEY", "").strip():
         raise HTTPException(
@@ -218,6 +225,7 @@ def chat_completion(
             calendar_service=calendar_service,
             notes_service=notes_service,
             contacts_service=contacts_service,
+            agents_service=agents_service,
         )
     except OpenAIChatConfigurationError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc

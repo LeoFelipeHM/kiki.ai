@@ -8,6 +8,7 @@ from application.notification_dispatcher import NotificationDispatcher
 from infrastructure.config import load_settings
 from presentation.api.routers import (
     admin,
+    agents,
     admin_blog,
     admin_usage,
     auth,
@@ -106,6 +107,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(agents.router)
 app.include_router(admin_blog.router)
 app.include_router(admin_usage.router)
 app.include_router(blog_metrics.router)

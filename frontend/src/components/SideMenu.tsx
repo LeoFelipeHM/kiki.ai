@@ -1,6 +1,7 @@
 import {
   Activity,
   BookUser,
+  Bot,
   Calendar,
   MessageCircle,
   X,
@@ -18,6 +19,7 @@ import { ROUTES } from '@/navigation/routes';
 type MenuScreen =
   | 'home'
   | 'chat'
+  | 'agents'
   | 'calendar'
   | 'profile'
   | 'settings'
@@ -33,6 +35,7 @@ const MENU_PATHS: Record<MenuScreen, string> = {
   notes: ROUTES.notes,
   contacts: ROUTES.contacts,
   chat: ROUTES.chat,
+  agents: ROUTES.agents,
   profile: ROUTES.profile,
   settings: ROUTES.settings,
   'admin-blog': ROUTES.adminBlog,
@@ -62,6 +65,7 @@ export function SideMenu({
   const menuItems: { id: MenuScreen; icon: typeof Home; label: string; description: string }[] = [
     { id: 'home', icon: Home, label: 'Início', description: 'Página inicial' },
     { id: 'chat', icon: MessageCircle, label: 'Chat com Kiki', description: 'Converse com sua assistente' },
+    { id: 'agents', icon: Bot, label: 'Agentes', description: 'Assistentes autônomos' },
     { id: 'calendar', icon: Calendar, label: 'Calendário', description: 'Visualize sua agenda' },
     { id: 'notes', icon: FileText, label: 'Notas', description: 'Suas anotações' },
     { id: 'contacts', icon: BookUser, label: 'Contatos', description: 'Nome e e-mail' },
@@ -91,6 +95,9 @@ export function SideMenu({
     }
     if (itemId === 'calendar') {
       return pathname === ROUTES.calendar;
+    }
+    if (itemId === 'agents') {
+      return pathname === ROUTES.agents || pathname.startsWith(`${ROUTES.agents}/`);
     }
     return pathname === MENU_PATHS[itemId];
   };

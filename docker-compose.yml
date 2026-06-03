@@ -51,6 +51,26 @@ services:
       - start
     restart: unless-stopped
 
+  agent-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: kiki-backend:latest
+    container_name: kiki-agent-worker
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - backend
+      - db
+    environment:
+      - PYTHONUNBUFFERED=1
+      - RUN_MIGRATIONS=0
+    command:
+      - python
+      - -m
+      - application.agent_worker
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend

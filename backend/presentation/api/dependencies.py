@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 
 from application.admin_service import AdminService
+from application.agents_service import AgentsService
 from application.auth_service import AuthService
 from application.calendar_service import CalendarService
 from application.contacts_service import ContactsService
@@ -16,6 +17,7 @@ from application.settings_service import SettingsService
 from application.errors import InvalidAccessTokenError
 from infrastructure.config import Settings, load_settings
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
+from infrastructure.persistence.postgres_agents_repository import PostgresAgentsRepository
 from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
 from infrastructure.persistence.postgres_push_repository import PostgresPushRepository
@@ -81,6 +83,10 @@ def get_notes_service(conn: DbConnDep) -> NotesService:
 
 def get_contacts_service(conn: DbConnDep) -> ContactsService:
     return ContactsService(conn, PostgresContactsRepository(conn))
+
+
+def get_agents_service(conn: DbConnDep) -> AgentsService:
+    return AgentsService(conn, PostgresAgentsRepository(conn))
 
 
 def get_settings_service(conn: DbConnDep) -> SettingsService:

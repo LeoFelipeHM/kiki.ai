@@ -8,6 +8,8 @@ import { AppShellProvider } from './context/AppShellContext';
 import { ROUTES, ROUTE_PATTERNS } from './root.paths';
 import { HomePage } from './private-pages/HomePage';
 import { ChatPage } from './private-pages/ChatPage';
+import { AgentsPage } from './private-pages/AgentsPage';
+import { AgentDetailPage } from './private-pages/AgentDetailPage';
 import { CalendarPage } from './private-pages/CalendarPage';
 import { NotesPage } from './private-pages/NotesPage';
 import { ContactsPage } from './private-pages/ContactsPage';
@@ -34,6 +36,8 @@ export const PAGE_REGISTRY = [
   { path: ROUTES.login, title: 'Login' },
   { path: ROUTES.home, title: 'Início' },
   { path: ROUTES.chat, title: 'Chat com Kiki' },
+  { path: ROUTES.agents, title: 'Agentes Kiki' },
+  { path: ROUTE_PATTERNS.agentDetail, title: 'Detalhe do agente' },
   { path: ROUTES.calendar, title: 'Calendário' },
   { path: ROUTES.notes, title: 'Notas' },
   { path: ROUTES.contacts, title: 'Contatos' },
@@ -141,6 +145,8 @@ export function RootRoutes({
       >
         <Route path={ROUTES.home} element={<HomePage />} />
         <Route path={ROUTES.chat} element={<ChatPage />} />
+        <Route path={ROUTES.agents} element={<AgentsPage />} />
+        <Route path={ROUTE_PATTERNS.agentDetail} element={<AgentDetailPage />} />
         <Route path={ROUTES.calendar} element={<CalendarPage />} />
         <Route path={ROUTES.notes} element={<NotesPage />} />
         <Route path={ROUTES.contacts} element={<ContactsPage />} />

@@ -510,6 +510,80 @@
     animation: border-wave 2s ease-out infinite;
   }
 
+  /* Agent Animations */
+  @keyframes agent-icon-bounce {
+    0%, 100% {
+      transform: translateY(0) rotate(0deg);
+    }
+    25% {
+      transform: translateY(-3px) rotate(-5deg);
+    }
+    50% {
+      transform: translateY(0) rotate(0deg);
+    }
+    75% {
+      transform: translateY(-2px) rotate(5deg);
+    }
+  }
+
+  @keyframes agent-icon-pulse {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.1);
+      opacity: 0.9;
+    }
+  }
+
+  @keyframes agent-glow {
+    0%, 100% {
+      box-shadow: 0 0 10px rgba(168, 85, 247, 0.3),
+                  0 0 20px rgba(168, 85, 247, 0.2),
+                  0 0 30px rgba(168, 85, 247, 0.1);
+    }
+    50% {
+      box-shadow: 0 0 15px rgba(168, 85, 247, 0.5),
+                  0 0 30px rgba(168, 85, 247, 0.3),
+                  0 0 45px rgba(168, 85, 247, 0.2);
+    }
+  }
+
+  @keyframes agent-rotate {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes agent-float {
+    0%, 100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-5px);
+    }
+  }
+
+  .agent-avatar-active {
+    animation: agent-glow 2s ease-in-out infinite, agent-float 3s ease-in-out infinite;
+  }
+
+  .agent-icon-working {
+    animation: agent-icon-bounce 2s ease-in-out infinite;
+  }
+
+  .agent-thinking {
+    animation: agent-icon-pulse 1.5s ease-in-out infinite;
+  }
+
+  .agent-processing {
+    animation: agent-rotate 3s linear infinite;
+  }
+
   /* Modal Animations */
   @keyframes fadeIn {
     from {

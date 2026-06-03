@@ -10,7 +10,9 @@ from psycopg.rows import dict_row
 
 from application.calendar_service import CalendarService
 from application.contacts_service import ContactsService
+from application.agents_service import AgentsService
 from application.notes_service import NotesService
+from infrastructure.persistence.postgres_agents_repository import PostgresAgentsRepository
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
 from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
@@ -54,6 +56,7 @@ def build_livekit_tools(
                     calendar_service=CalendarService(conn, PostgresCalendarRepository(conn)),
                     notes_service=notes_service,
                     contacts_service=ContactsService(conn, PostgresContactsRepository(conn)),
+                    agents_service=AgentsService(conn, PostgresAgentsRepository(conn)),
                 )
             return json.loads(json.dumps(result, ensure_ascii=False, default=str))
 

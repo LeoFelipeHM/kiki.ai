@@ -23,6 +23,51 @@ def _tool_ok(payload: Any) -> dict[str, Any]:
     return {"ok": True, "data": payload}
 
 
+def _agent_public(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": row.get("name"),
+        "task": row.get("task"),
+        "status": row.get("status"),
+        "type": row.get("type"),
+        "effort": row.get("effort"),
+        "progress": row.get("progress"),
+        "current_action": row.get("current_action"),
+        "results": row.get("results"),
+        "error_message": row.get("error_message"),
+        "steps": [
+            {
+                "position": step.get("position"),
+                "description": step.get("description"),
+                "status": step.get("status"),
+                "details": step.get("details"),
+            }
+            for step in row.get("steps", [])
+        ],
+    }
+
+
+def _normalize_agent_name(value: str) -> str:
+    return " ".join(value.strip().lower().split())
+
+
+def _find_agent_id_by_name(rows: list[dict[str, Any]], name: str) -> str | None:
+    needle = _normalize_agent_name(name)
+    if not needle:
+        return None
+    exact = [row for row in rows if _normalize_agent_name(str(row.get("name") or "")) == needle]
+    if len(exact) == 1:
+        return str(exact[0]["id"])
+    contains = [
+        row
+        for row in rows
+        if needle in _normalize_agent_name(str(row.get("name") or ""))
+        or _normalize_agent_name(str(row.get("name") or "")) in needle
+    ]
+    if len(contains) == 1:
+        return str(contains[0]["id"])
+    return None
+
+
 def _parse_iso_dt(value: str, user_timezone: str | None) -> datetime:
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -77,6 +122,7 @@ def execute_tool_call(
     calendar_service: Any,
     notes_service: Any,
     contacts_service: Any = None,
+    agents_service: Any = None,
 ) -> dict[str, Any]:
     """Executa uma tool e retorna um payload JSON serializável para devolver ao modelo."""
     try:
@@ -426,6 +472,55 @@ def execute_tool_call(
                 if not ok:
                     return _tool_error("Contato não encontrado.")
                 return _tool_ok({"deleted": True})
+
+        if name in (
+            "agents_list_agents",
+            "agents_create_agent",
+            "agents_authorize_agent",
+        ):
+            if agents_service is None:
+                return _tool_error("Serviço de agentes indisponível nesta sessão.")
+
+            if name == "agents_list_agents":
+                rows = agents_service.list_agents(current_user_id)
+                return _tool_ok([_agent_public(row) for row in rows])
+
+            if name == "agents_create_agent":
+                task = str(arguments.get("task") or "").strip()
+                if not task:
+                    return _tool_error("Descreva a tarefa do agente.")
+                agent_type = str(arguments.get("type") or "custom").strip()
+                if agent_type not in ("research", "shopping", "travel", "custom"):
+                    agent_type = "custom"
+                effort = str(arguments.get("effort") or "medium").strip()
+                if effort not in ("low", "medium", "high"):
+                    effort = "medium"
+                name_raw = arguments.get("name")
+                name_val = str(name_raw).strip() if name_raw is not None and str(name_raw).strip() else None
+                row = agents_service.create_agent(
+                    current_user_id,
+                    task=task,
+                    agent_type=agent_type,
+                    effort=effort,
+                    name=name_val,
+                )
+                return _tool_ok(_agent_public(row))
+
+            if name == "agents_authorize_agent":
+                agent_name = str(arguments.get("agent_name") or "").strip()
+                agent_id = str(arguments.get("agent_id") or "").strip()
+                if agent_name:
+                    rows = agents_service.list_agents(current_user_id)
+                    resolved = _find_agent_id_by_name(rows, agent_name)
+                    if not resolved:
+                        available = ", ".join(str(row.get("name") or "") for row in rows[:5])
+                        suffix = f" Agentes disponíveis: {available}." if available else ""
+                        return _tool_error(f"Não encontrei um agente com esse nome.{suffix}")
+                    agent_id = resolved
+                if not agent_id:
+                    return _tool_error("Informe o nome do agente que deve ser autorizado.")
+                row = agents_service.authorize_agent(current_user_id, agent_id)
+                return _tool_ok(_agent_public(row))
 
         return _tool_error("Ferramenta desconhecida.")
     except Exception as exc:
