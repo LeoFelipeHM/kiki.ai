@@ -50,3 +50,9 @@ class CalendarEventResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     guests: list[CalendarGuestResponse]
+
+
+class FriendCalendarEventRequestResponse(BaseModel):
+    mode: str
+    event: CalendarEventResponse | None = None
+    notification_id: str | None = None

@@ -12,7 +12,9 @@ export function AgentsPage() {
     <AgentsScreen
       onOpenMenu={openMenu}
       onNavigateToHome={() => navigate(ROUTES.home)}
-      onNavigateToProfile={() => navigate(ROUTES.profile, { state: { from: location.pathname } })}
+      onNavigateToNotifications={() =>
+        navigate(ROUTES.profileNotifications, { state: { from: location.pathname } })
+      }
       onNavigateToAgentDetail={(agentId) => navigate(ROUTES.agentDetail(agentId))}
       onSessionExpired={onSessionExpired}
       userName={profileData.name}

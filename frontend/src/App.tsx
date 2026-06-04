@@ -63,6 +63,7 @@ function AppRoutes() {
   const [profileData, setProfileData] = useState<ProfileDataState>({
     name: 'Maria Silva',
     email: 'maria.silva@email.com',
+    nickname: '',
     phone: '+55 (11) 98765-4321',
     birthdate: '15 de Março, 1995',
     language: 'Português (Brasil)',
@@ -107,6 +108,7 @@ function AppRoutes() {
         ...prev,
         name: result.user?.name || prev.name,
         email: result.user?.email || prev.email,
+        nickname: result.user?.nickname || prev.nickname,
       }));
       if (result.user) {
         setCurrentUserId(result.user.id);
@@ -123,7 +125,12 @@ function AppRoutes() {
     void (async () => {
       const user = await initializeAuthSession();
       if (user) {
-        setProfileData((prev) => ({ ...prev, name: user.name, email: user.email }));
+        setProfileData((prev) => ({
+          ...prev,
+          name: user.name,
+          email: user.email,
+          nickname: user.nickname,
+        }));
         setCurrentUserId(user.id);
         setUserRole(user.role);
         setIsAuthenticated(true);

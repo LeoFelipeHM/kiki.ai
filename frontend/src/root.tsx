@@ -40,7 +40,7 @@ export const PAGE_REGISTRY = [
   { path: ROUTE_PATTERNS.agentDetail, title: 'Detalhe do agente' },
   { path: ROUTES.calendar, title: 'Calendário' },
   { path: ROUTES.notes, title: 'Notas' },
-  { path: ROUTES.contacts, title: 'Contatos' },
+  { path: ROUTES.contacts, title: 'Amigos' },
   { path: ROUTES.settings, title: 'Configurações' },
   { path: ROUTES.profile, title: 'Perfil' },
   { path: ROUTES.profilePhoto, title: 'Foto do perfil' },

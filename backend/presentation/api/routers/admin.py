@@ -26,10 +26,18 @@ def admin_list_users(_admin: AdminUserDep, admin_service: AdminServiceDep):
 @router.post("", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)
 def admin_create_user(payload: AdminCreateUserRequest, _admin: AdminUserDep, admin_service: AdminServiceDep):
     try:
-        row = admin_service.create_user(payload.name, payload.email, payload.password, payload.role)
+        row = admin_service.create_user(
+            payload.name,
+            payload.email,
+            payload.password,
+            payload.role,
+            payload.nickname,
+        )
         return AdminUserResponse(**row)
     except AdminEmailConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.patch("/{user_id}", response_model=AdminUserResponse)
@@ -45,11 +53,14 @@ def admin_update_user(
             current_admin_id=str(current_admin["id"]),
             name=payload.name,
             email=payload.email,
+            nickname=payload.nickname,
             password=payload.password,
             role=payload.role,
             is_active=payload.is_active,
         )
         return AdminUserResponse(**row)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except AdminNoFieldsError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.detail) from exc
     except AdminEmailConflictError as exc:

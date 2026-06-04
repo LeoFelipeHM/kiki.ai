@@ -12,7 +12,9 @@ export function ChatPage() {
     <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
       <ChatScreen
         onOpenMenu={openMenu}
-        onNavigateToProfile={() => navigate(ROUTES.profile, { state: { from: location.pathname } })}
+        onNavigateToNotifications={() =>
+          navigate(ROUTES.profileNotifications, { state: { from: location.pathname } })
+        }
         onNavigateToHome={() => navigate(ROUTES.home)}
         userName={profileData.name}
       />

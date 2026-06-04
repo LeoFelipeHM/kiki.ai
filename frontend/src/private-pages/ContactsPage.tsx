@@ -11,7 +11,9 @@ export function ContactsPage() {
   return (
     <ContactsScreen
       onOpenMenu={openMenu}
-      onNavigateToProfile={() => navigate(ROUTES.profile, { state: { from: location.pathname } })}
+      onNavigateToNotifications={() =>
+        navigate(ROUTES.profileNotifications, { state: { from: location.pathname } })
+      }
       onNavigateToHome={() => navigate(ROUTES.home)}
       onSessionExpired={onSessionExpired}
       userName={profileData.name}

@@ -9,11 +9,13 @@ import {
   Sun,
   Mail,
   Watch,
+  AtSign,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { NotificationPreferencesEditor } from './NotificationPreferencesEditor';
 import { VoiceChatOrb } from './VoiceChatOrb';
 import { useTheme } from './ThemeProvider';
+import { AppNotificationsBell } from './HomeNotificationsBell';
 import { useAppShell } from '@/context/AppShellContext';
 import {
   AZURE_PT_BR_VOICES,
@@ -21,7 +23,8 @@ import {
   normalizeStoredAssistantVoice,
   type AssistantVoice,
 } from '@/lib/azureVoicesPtBR';
-import { AuthSessionExpiredError, fetchSettings, patchUi } from '@/services/settings';
+import { AuthSessionExpiredError, updateProfile } from '@/services/auth';
+import { fetchSettings, patchUi } from '@/services/settings';
 import {
   Table,
   TableBody,
@@ -62,6 +65,7 @@ function notificationSummary(n: {
 
 interface SettingsScreenProps {
   onNavigateToProfile?: () => void;
+  onNavigateToNotifications?: () => void;
   onOpenMenu?: () => void;
   onNavigateToHome?: () => void;
   onSecurityNavigation?: (type: string) => void;
@@ -69,10 +73,12 @@ interface SettingsScreenProps {
   onLogout?: () => Promise<void>;
   userName?: string;
   userEmail?: string;
+  userNickname?: string;
 }
 
 export function SettingsScreen({
   onNavigateToProfile,
+  onNavigateToNotifications,
   onOpenMenu,
   onNavigateToHome,
   onSecurityNavigation: _onSecurityNavigation,
@@ -80,9 +86,10 @@ export function SettingsScreen({
   onLogout,
   userName = 'Maria Silva',
   userEmail = 'maria.silva@email.com',
+  userNickname = '',
 }: SettingsScreenProps) {
   const { themeColor } = useTheme();
-  const { setAppearance, onSessionExpired } = useAppShell();
+  const { setAppearance, setProfileData, onSessionExpired } = useAppShell();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingUi, setIsSavingUi] = useState(false);
@@ -94,7 +101,12 @@ export function SettingsScreen({
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showNotifModal, setShowNotifModal] = useState(false);
+  const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [nicknameDraft, setNicknameDraft] = useState(userNickname);
+  const [nicknameError, setNicknameError] = useState<string | null>(null);
+  const [isSavingNickname, setIsSavingNickname] = useState(false);
+  const [displayNickname, setDisplayNickname] = useState(userNickname);
   const [selectedTheme, setSelectedTheme] = useState<'light' | 'dark'>('light');
   const [selectedVoiceId, setSelectedVoiceId] = useState<AssistantVoice>('pt-BR-FranciscaNeural');
 
@@ -134,6 +146,11 @@ export function SettingsScreen({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setDisplayNickname(userNickname);
+    setNicknameDraft(userNickname);
+  }, [userNickname]);
+
   const themeOptions = [
     { value: 'light' as const, label: 'Claro', icon: Sun, description: 'Interface com fundo claro' },
     { value: 'dark' as const, label: 'Escuro', icon: Moon, description: 'Interface com fundo escuro' },
@@ -156,6 +173,41 @@ export function SettingsScreen({
     }
   };
 
+  const openNicknameModal = () => {
+    setNicknameError(null);
+    setNicknameDraft(displayNickname);
+    setShowNicknameModal(true);
+  };
+
+  const handleNicknameSave = async () => {
+    const trimmed = nicknameDraft.trim().replace(/^@/, '');
+    if (trimmed.length < 3) {
+      setNicknameError('O nickname deve ter pelo menos 3 caracteres.');
+      return;
+    }
+    setIsSavingNickname(true);
+    setNicknameError(null);
+    try {
+      const user = await updateProfile({ nickname: trimmed });
+      setDisplayNickname(user.nickname);
+      setProfileData((prev) => ({
+        ...prev,
+        name: user.name,
+        email: user.email,
+        nickname: user.nickname,
+      }));
+      setShowNicknameModal(false);
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) {
+        onSessionExpired();
+        return;
+      }
+      setNicknameError(e instanceof Error ? e.message : 'Não foi possível salvar o nickname.');
+    } finally {
+      setIsSavingNickname(false);
+    }
+  };
+
   const handleVoiceSave = async () => {
     setIsSavingUi(true);
     try {
@@ -174,6 +226,17 @@ export function SettingsScreen({
 
   const settingsSections = useMemo(
     () => [
+      {
+        title: 'Conta',
+        items: [
+          {
+            icon: AtSign,
+            label: 'Nickname',
+            value: displayNickname ? `@${displayNickname}` : 'Definir nickname',
+            action: 'nickname' as const,
+          },
+        ],
+      },
       {
         title: 'Preferências',
         items: [
@@ -202,11 +265,13 @@ export function SettingsScreen({
         })),
       },
     ],
-    [notifSummary, selectedTheme, selectedVoiceId, integrationRows],
+    [displayNickname, notifSummary, selectedTheme, selectedVoiceId, integrationRows],
   );
 
   const handleItemClick = (_section: string, label: string, action: string) => {
-    if (action === 'popup') {
+    if (action === 'nickname') {
+      openNicknameModal();
+    } else if (action === 'popup') {
       if (label === 'Notificações') {
         setShowNotifModal(true);
       } else if (label === 'Tema') {
@@ -238,7 +303,7 @@ export function SettingsScreen({
             >
               Kiki
             </button>
-            <div className="w-10" />
+            <AppNotificationsBell onNavigateToAll={onNavigateToNotifications} />
           </div>
           <div className="mb-5">
             <h1 className="text-2xl">Configurações</h1>
@@ -267,6 +332,9 @@ export function SettingsScreen({
               </div>
               <div className="flex-1 text-left">
                 <h2 className="text-base mb-0.5 text-white">{userName}</h2>
+                {displayNickname ? (
+                  <p className="text-sm text-white/90">@{displayNickname}</p>
+                ) : null}
                 <p className="text-sm text-white/80">{userEmail}</p>
               </div>
               <ChevronRight className="w-5 h-5 text-white/70" />
@@ -473,6 +541,70 @@ export function SettingsScreen({
                 type="button"
                 onClick={() => setShowVoiceModal(false)}
                 className="w-full bg-muted text-foreground py-3 rounded-full font-semibold btn-apple"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showNicknameModal && (
+        <>
+          <div
+            role="presentation"
+            className="fixed inset-0 bg-black/50 z-50 backdrop-blur-sm"
+            onClick={() => !isSavingNickname && setShowNicknameModal(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="nickname-modal-title"
+            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-background rounded-3xl shadow-2xl z-50 p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="nickname-modal-title" className="text-xl mb-1">
+              Nickname
+            </h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Amigos podem te encontrar por esse nome. Use letras, números e underscore (mín. 3 caracteres).
+            </p>
+            <label className="block text-sm font-medium mb-2" htmlFor="settings-nickname">
+              Seu nickname
+            </label>
+            <div className="relative mb-2">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                @
+              </span>
+              <input
+                id="settings-nickname"
+                type="text"
+                minLength={3}
+                maxLength={60}
+                value={nicknameDraft}
+                onChange={(e) => setNicknameDraft(e.target.value.replace(/^@/, ''))}
+                placeholder="seu_nickname"
+                className="w-full pl-7 pr-3 py-3 rounded-xl border border-border bg-card focus:outline-none focus:ring-2 focus:ring-purple-500 input-apple"
+                autoComplete="username"
+              />
+            </div>
+            {nicknameError ? (
+              <p className="text-xs text-destructive mb-3">{nicknameError}</p>
+            ) : null}
+            <div className="space-y-2">
+              <button
+                type="button"
+                disabled={isSavingNickname}
+                onClick={() => void handleNicknameSave()}
+                className={`w-full bg-gradient-to-br ${themeColor} text-white py-3 rounded-full font-semibold btn-apple-gradient disabled:opacity-50`}
+              >
+                {isSavingNickname ? 'Salvando…' : 'Salvar'}
+              </button>
+              <button
+                type="button"
+                disabled={isSavingNickname}
+                onClick={() => setShowNicknameModal(false)}
+                className="w-full bg-muted text-foreground py-3 rounded-full font-semibold btn-apple disabled:opacity-50"
               >
                 Cancelar
               </button>

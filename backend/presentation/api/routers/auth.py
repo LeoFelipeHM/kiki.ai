@@ -18,6 +18,7 @@ from presentation.api.schemas.auth import (
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
+    UpdateProfileRequest,
     UserResponse,
 )
 
@@ -29,10 +30,12 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, auth_service: AuthServiceDep):
     try:
-        user = auth_service.register(payload.name, payload.email, payload.password)
+        user = auth_service.register(payload.name, payload.email, payload.password, payload.nickname)
         return UserResponse(**user)
     except EmailAlreadyRegisteredError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -81,6 +84,23 @@ def logout(payload: LogoutRequest, auth_service: AuthServiceDep):
 @router.get("/me", response_model=UserResponse)
 def me(current_user: CurrentUserDep):
     return UserResponse(**current_user)
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_me(
+    payload: UpdateProfileRequest,
+    current_user: CurrentUserDep,
+    auth_service: AuthServiceDep,
+):
+    try:
+        user = auth_service.update_profile(
+            str(current_user["id"]),
+            name=payload.name,
+            nickname=payload.nickname,
+        )
+        return UserResponse(**user)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)

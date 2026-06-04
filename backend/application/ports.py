@@ -21,6 +21,8 @@ class CalendarRepository(Protocol):
         description: str | None,
         status: str,
         guests: list[tuple[str, str | None]],
+        created_by_user_id: str | None = None,
+        source_request_id: str | None = None,
     ) -> dict[str, Any]: ...
 
     def get_event(self, user_id: str, event_id: str) -> dict[str, Any] | None: ...
@@ -69,6 +71,7 @@ class NotesRepository(Protocol):
         is_locked: bool | None = None,
         tags_replace: bool = False,
         tags: list[str] | None = None,
+        expected_updated_at: Any | None = None,
     ) -> dict[str, Any] | None: ...
 
     def delete_note(self, user_id: str, note_id: str) -> bool: ...

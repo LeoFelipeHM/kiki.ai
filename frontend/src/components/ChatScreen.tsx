@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLiveKitCameraFrames } from '@/hooks/useLiveKitCameraFrames';
 import { useLiveKitVoiceRoom } from '@/hooks/useLiveKitVoiceRoom';
 import { voiceCenterPrimary, voiceCenterSecondary, voiceOverlayCaption } from '@/lib/voiceUiCaptions';
+import { AppNotificationsBell } from './HomeNotificationsBell';
 import {
   fetchChatConversation,
   fetchChatConversations,
@@ -65,7 +66,7 @@ interface Message {
 
 interface ChatScreenProps {
   onOpenMenu?: () => void;
-  onNavigateToProfile?: () => void;
+  onNavigateToNotifications?: () => void;
   onNavigateToHome?: () => void;
   userName?: string;
 }
@@ -141,7 +142,7 @@ function formatConversationDate(date: Date): string {
   });
 }
 
-export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, userName = 'Maria Silva' }: ChatScreenProps) {
+export function ChatScreen({ onOpenMenu, onNavigateToNotifications, onNavigateToHome, userName = 'Maria Silva' }: ChatScreenProps) {
   const [messages, setMessages] = useState<Message[]>([createWelcomeMessage()]);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
@@ -663,12 +664,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
               >
                 Kiki
               </button>
-              <button
-                onClick={onNavigateToProfile}
-                className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm btn-apple-gradient shadow-md"
-              >
-                <span className="text-white font-medium">{userName.charAt(0).toUpperCase()}</span>
-              </button>
+              <AppNotificationsBell onNavigateToAll={onNavigateToNotifications} />
             </div>
             <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
@@ -836,12 +832,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
           >
             Kiki
           </button>
-          <button
-            onClick={onNavigateToProfile}
-            className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm btn-apple-gradient shadow-md"
-          >
-            <span className="text-white font-medium">{userName.charAt(0).toUpperCase()}</span>
-          </button>
+          <AppNotificationsBell onNavigateToAll={onNavigateToNotifications} />
         </div>
         <div className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">

@@ -1,6 +1,7 @@
 /** Slug na URL → rótulo usado em ProfileScreen / EditProfileField */
 export const PROFILE_FIELD_SLUG_TO_LABEL: Record<string, string> = {
   nome: 'Nome completo',
+  nickname: 'Nickname',
   email: 'E-mail',
   telefone: 'Telefone',
   nascimento: 'Data de nascimento',

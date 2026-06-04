@@ -1,20 +1,46 @@
 import { ArrowLeft, Save } from 'lucide-react';
 import { backNavButtonClassName } from '@/lib/backNavButton';
 import { useState } from 'react';
+import { AuthSessionExpiredError } from '@/services/auth';
 
 interface EditProfileFieldProps {
   field: string;
   currentValue: string;
   onNavigateBack?: () => void;
-  onSave?: (value: string) => void;
+  onSave?: (value: string) => void | Promise<void>;
+  onSessionExpired?: () => void;
 }
 
-export function EditProfileField({ field, currentValue, onNavigateBack, onSave }: EditProfileFieldProps) {
+export function EditProfileField({
+  field,
+  currentValue,
+  onNavigateBack,
+  onSave,
+  onSessionExpired,
+}: EditProfileFieldProps) {
   const [value, setValue] = useState(currentValue);
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    onSave?.(value);
-    onNavigateBack?.();
+  const handleSave = async () => {
+    if (!onSave) {
+      onNavigateBack?.();
+      return;
+    }
+    setSaving(true);
+    setSaveError('');
+    try {
+      await onSave(value);
+      onNavigateBack?.();
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setSaveError(e instanceof Error ? e.message : 'Não foi possível salvar.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const getInputType = () => {
@@ -28,6 +54,8 @@ export function EditProfileField({ field, currentValue, onNavigateBack, onSave }
     switch (field) {
       case 'Nome completo':
         return 'Digite seu nome completo';
+      case 'Nickname':
+        return 'seu_nickname';
       case 'E-mail':
         return 'exemplo@email.com';
       case 'Telefone':
@@ -94,17 +122,27 @@ export function EditProfileField({ field, currentValue, onNavigateBack, onSave }
             )}
           </div>
 
+          {saveError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+              {saveError}
+            </div>
+          ) : null}
+
           <button
-            onClick={handleSave}
-            className="w-full bg-gradient-to-br from-purple-500 to-pink-500 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 btn-apple-gradient shadow-md hover:shadow-lg transition-all"
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="w-full bg-gradient-to-br from-purple-500 to-pink-500 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 btn-apple-gradient shadow-md hover:shadow-lg transition-all disabled:opacity-60"
           >
             <Save className="w-4 h-4" />
-            Salvar alterações
+            {saving ? 'Salvando…' : 'Salvar alterações'}
           </button>
 
           <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
             <p className="text-xs text-purple-700">
               {field === 'Nome completo' && 'Certifique-se de usar seu nome real para uma experiência personalizada'}
+              {field === 'Nickname' &&
+                'Use letras, números e underscore. Mínimo 3 caracteres. Amigos podem te encontrar por esse nickname.'}
               {field === 'E-mail' && 'Usaremos este e-mail para notificações importantes'}
               {field === 'Telefone' && 'Pode ser usado para autenticação e recuperação de conta'}
               {field === 'Data de nascimento' && 'Ajuda a Kiki a enviar lembretes e mensagens especiais'}

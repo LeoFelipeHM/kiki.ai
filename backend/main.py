@@ -16,8 +16,10 @@ from presentation.api.routers import (
     calendar,
     chat,
     contacts,
+    friends,
     health,
     notes,
+    notifications,
     push,
     settings,
     voice_livekit,
@@ -113,7 +115,9 @@ app.include_router(admin_usage.router)
 app.include_router(blog_metrics.router)
 app.include_router(calendar.router)
 app.include_router(contacts.router)
+app.include_router(friends.router)
 app.include_router(notes.router)
+app.include_router(notifications.router)
 app.include_router(settings.router)
 app.include_router(chat.router)
 app.include_router(voice_livekit.router)

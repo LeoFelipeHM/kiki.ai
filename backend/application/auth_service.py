@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -22,6 +23,7 @@ from infrastructure.security.password_hasher import PasswordHasher
 
 
 _BRASILIA = ZoneInfo("America/Sao_Paulo")
+_NICKNAME_RE = re.compile(r"[^a-zA-Z0-9_]+")
 
 
 def _truncate_user_agent(user_agent: str | None, max_len: int = 512) -> str | None:
@@ -43,6 +45,14 @@ def _access_event_metadata(ip_address: str | None, user_agent: str | None) -> di
     }
 
 
+def normalize_user_nickname(raw: str | None, email: str) -> str:
+    source = raw.strip() if raw else email.split("@", 1)[0]
+    normalized = _NICKNAME_RE.sub("_", source).strip("_").lower()
+    if len(normalized) < 3:
+        normalized = f"user_{normalized or 'kiki'}"
+    return normalized[:60]
+
+
 class AuthService:
     def __init__(
         self,
@@ -62,11 +72,14 @@ class AuthService:
         self._jwt = jwt
         self._usage = usage
 
-    def register(self, name: str, email: str, password: str) -> dict[str, Any]:
+    def register(self, name: str, email: str, password: str, nickname: str | None = None) -> dict[str, Any]:
         if self._users.email_exists(email):
             raise EmailAlreadyRegisteredError()
+        normalized_nickname = normalize_user_nickname(nickname, email)
+        if self._users.nickname_exists(normalized_nickname):
+            raise ValueError("Este nickname já está em uso.")
         password_hash = self._passwords.hash(password)
-        user = self._users.insert_registered_user(name, email, password_hash)
+        user = self._users.insert_registered_user(name, email, normalized_nickname, password_hash)
         bootstrap_user_defaults(self._conn, str(user["id"]))
         self._conn.commit()
         return user
@@ -220,3 +233,28 @@ class AuthService:
         self._users.update_password_hash(user_id, new_hash)
         self._refresh_tokens.revoke_all_for_user(user_id)
         self._conn.commit()
+
+    def update_profile(
+        self,
+        user_id: str,
+        *,
+        name: str | None = None,
+        nickname: str | None = None,
+    ) -> dict[str, Any]:
+        if name is None and nickname is None:
+            raise ValueError("Informe ao menos um campo para atualizar.")
+
+        normalized_nickname: str | None = None
+        if nickname is not None:
+            trimmed = nickname.strip()
+            if len(trimmed) < 3:
+                raise ValueError("O nickname deve ter pelo menos 3 caracteres.")
+            normalized_nickname = normalize_user_nickname(trimmed, trimmed)
+            if self._users.nickname_taken_by_other(normalized_nickname, user_id):
+                raise ValueError("Este nickname já está em uso.")
+
+        row = self._users.update_profile(user_id, name=name.strip() if name is not None else None, nickname=normalized_nickname)
+        if not row:
+            raise ValueError("Usuário não encontrado.")
+        self._conn.commit()
+        return row

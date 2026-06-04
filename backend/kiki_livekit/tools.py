@@ -11,11 +11,15 @@ from psycopg.rows import dict_row
 from application.calendar_service import CalendarService
 from application.contacts_service import ContactsService
 from application.agents_service import AgentsService
+from application.friends_service import FriendsService
 from application.notes_service import NotesService
+from application.notifications_service import NotificationsService
 from infrastructure.persistence.postgres_agents_repository import PostgresAgentsRepository
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
 from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
+from infrastructure.persistence.postgres_friends_repository import PostgresFriendsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
+from infrastructure.persistence.postgres_notifications_repository import PostgresNotificationsRepository
 from llm.tools.dispatcher import execute_tool_call
 from llm.tools.schemas import ToolName, tools_schema
 
@@ -45,18 +49,27 @@ def build_livekit_tools(
 
         def _call_tool(raw_arguments: dict[str, Any], *, _tool_name: ToolName = tool_name) -> dict[str, Any]:
             with psycopg.connect(database_url, row_factory=dict_row) as conn:
-                notes_service = NotesService(conn, PostgresNotesRepository(conn))
+                friends_repo = PostgresFriendsRepository(conn)
+                notifications = NotificationsService(conn, PostgresNotificationsRepository(conn), friends_repo)
+                notes_service = NotesService(conn, PostgresNotesRepository(conn), friends_repo, notifications)
                 if on_note_changed is not None:
                     notes_service = _RealtimeNotesService(notes_service, on_note_changed, on_note_deleted)
+                friends_service = FriendsService(conn, friends_repo, notifications)
                 result = execute_tool_call(
                     _tool_name,
                     raw_arguments,
                     current_user_id=current_user_id,
                     current_user_timezone=current_user_timezone,
-                    calendar_service=CalendarService(conn, PostgresCalendarRepository(conn)),
+                    calendar_service=CalendarService(
+                        conn,
+                        PostgresCalendarRepository(conn),
+                        friends_repo,
+                        notifications,
+                    ),
                     notes_service=notes_service,
                     contacts_service=ContactsService(conn, PostgresContactsRepository(conn)),
                     agents_service=AgentsService(conn, PostgresAgentsRepository(conn)),
+                    friends_service=friends_service,
                 )
             return json.loads(json.dumps(result, ensure_ascii=False, default=str))
 
@@ -73,6 +86,9 @@ class _RealtimeNotesService:
 
     def list_notes(self, *args: Any, **kwargs: Any) -> Any:
         return self._inner.list_notes(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
 
     def create_note(self, *args: Any, **kwargs: Any) -> Any:
         row = self._inner.create_note(*args, **kwargs)

@@ -12,6 +12,10 @@ def _normalize_event_row(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
     out["id"] = str(out["id"])
     out["user_id"] = str(out["user_id"])
+    if out.get("created_by_user_id") is not None:
+        out["created_by_user_id"] = str(out["created_by_user_id"])
+    if out.get("source_request_id") is not None:
+        out["source_request_id"] = str(out["source_request_id"])
     out["event_type"] = str(out["event_type"])
     return out
 
@@ -65,7 +69,8 @@ class PostgresCalendarRepository:
             cur.execute(
                 f"""
                 SELECT id, user_id, title, starts_at, ends_at, event_type::text AS event_type,
-                       color, description, status, created_at, updated_at
+                       color, description, status, created_by_user_id, source_request_id,
+                       created_at, updated_at
                 FROM calendar_events
                 WHERE {where_clause}
                 ORDER BY starts_at ASC
@@ -94,18 +99,33 @@ class PostgresCalendarRepository:
         description: str | None,
         status: str,
         guests: list[tuple[str, str | None]],
+        created_by_user_id: str | None = None,
+        source_request_id: str | None = None,
     ) -> dict[str, Any]:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO calendar_events (
-                  user_id, title, starts_at, ends_at, event_type, color, description, status
+                  user_id, title, starts_at, ends_at, event_type, color, description, status,
+                  created_by_user_id, source_request_id
                 )
-                VALUES (%s, %s, %s, %s, %s::event_type, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s::event_type, %s, %s, %s, %s::uuid, %s::uuid)
                 RETURNING id, user_id, title, starts_at, ends_at, event_type::text AS event_type,
-                          color, description, status, created_at, updated_at
+                          color, description, status, created_by_user_id, source_request_id,
+                          created_at, updated_at
                 """,
-                (user_id, title, starts_at, ends_at, event_type, color, description, status),
+                (
+                    user_id,
+                    title,
+                    starts_at,
+                    ends_at,
+                    event_type,
+                    color,
+                    description,
+                    status,
+                    created_by_user_id,
+                    source_request_id,
+                ),
             )
             row = cur.fetchone()
             assert row is not None
@@ -127,7 +147,8 @@ class PostgresCalendarRepository:
             cur.execute(
                 """
                 SELECT id, user_id, title, starts_at, ends_at, event_type::text AS event_type,
-                       color, description, status, created_at, updated_at
+                       color, description, status, created_by_user_id, source_request_id,
+                       created_at, updated_at
                 FROM calendar_events
                 WHERE user_id = %s AND id = %s::uuid
                 """,

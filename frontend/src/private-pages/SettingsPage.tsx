@@ -11,10 +11,14 @@ export function SettingsPage() {
     <SettingsScreen
       userName={profileData.name}
       userEmail={profileData.email}
+      userNickname={profileData.nickname}
       onOpenMenu={openMenu}
       onNavigateToHome={() => navigate(ROUTES.home)}
       onNavigateToProfile={() =>
         navigate(ROUTES.profile, { state: { from: ROUTES.settings } })
+      }
+      onNavigateToNotifications={() =>
+        navigate(ROUTES.profileNotifications, { state: { from: ROUTES.settings } })
       }
       onLogout={onLogout}
       onSecurityNavigation={(type) => {

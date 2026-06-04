@@ -4,6 +4,7 @@ export interface AdminUser {
   id: string;
   name: string;
   email: string;
+  nickname: string;
   role: 'admin' | 'user';
   is_active: boolean;
   created_at: string;
@@ -12,6 +13,7 @@ export interface AdminUser {
 export interface AdminCreateUserInput {
   name: string;
   email: string;
+  nickname?: string;
   password: string;
   role: 'admin' | 'user';
 }
@@ -19,6 +21,7 @@ export interface AdminCreateUserInput {
 export interface AdminUpdateUserInput {
   name?: string;
   email?: string;
+  nickname?: string;
   password?: string;
   role?: 'admin' | 'user';
   is_active?: boolean;

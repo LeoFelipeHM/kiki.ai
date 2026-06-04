@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTheme } from '@/components/ThemeProvider';
+import { AppNotificationsBell } from '@/components/HomeNotificationsBell';
 import { VoiceChatOrb } from '@/components/VoiceChatOrb';
 import { AuthSessionExpiredError } from '@/services/auth';
 import {
@@ -60,14 +61,14 @@ function progressForDisplay(agent: Agent) {
 
 export function AgentsScreen({
   onOpenMenu,
-  onNavigateToProfile,
+  onNavigateToNotifications,
   onNavigateToHome,
   onNavigateToAgentDetail,
   onSessionExpired,
   userName = 'Maria Silva',
 }: {
   onOpenMenu?: () => void;
-  onNavigateToProfile?: () => void;
+  onNavigateToNotifications?: () => void;
   onNavigateToHome?: () => void;
   onNavigateToAgentDetail?: (agentId: string) => void;
   onSessionExpired?: () => void;
@@ -286,9 +287,7 @@ export function AgentsScreen({
             <button onClick={onNavigateToHome} className="text-base font-medium text-muted-foreground transition-colors hover:text-foreground btn-apple">
               Kiki
             </button>
-            <button onClick={onNavigateToProfile} className={`flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br ${themeColor} text-sm shadow-sm btn-apple-gradient`}>
-              <span className="font-medium text-white">{userName.charAt(0).toUpperCase()}</span>
-            </button>
+            <AppNotificationsBell onNavigateToAll={onNavigateToNotifications} />
           </div>
 
           <div className="mb-4 flex items-center justify-between">

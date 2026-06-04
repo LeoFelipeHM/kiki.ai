@@ -15,7 +15,9 @@ export function HomePage() {
         const v = viewMode ?? 'week';
         navigate(`${ROUTES.calendar}?view=${v}`);
       }}
-      onNavigateToProfile={() => navigate(ROUTES.profile, { state: { from: location.pathname } })}
+      onNavigateToNotifications={() =>
+        navigate(ROUTES.profileNotifications, { state: { from: location.pathname } })
+      }
       onOpenMenu={openMenu}
       events={events}
       userName={profileData.name}

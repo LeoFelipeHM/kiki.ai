@@ -1,16 +1,29 @@
-import { ChevronLeft, ChevronRight, Plus, AlertCircle, X, Users, Menu, ZoomIn, ZoomOut } from 'lucide-react';
+import {
+  AlertCircle,
+  AlignJustify,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
+  Plus,
+  Users,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { format, isSameDay, parseISO, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { AppNotificationsBell } from './HomeNotificationsBell';
 import { VoiceChatOrb } from './VoiceChatOrb';
 
 import {
   buildIsoRange,
   dayKeyFromDate,
   fetchRangeIncludingToday,
-  formatCalendarTitle,
   mergeEventsById,
   monthGridCells,
   moveEventToSlot,
@@ -24,10 +37,13 @@ import {
 } from '@/lib/calendarUtils';
 import {
   createCalendarEvent,
+  createFriendCalendarEventRequest,
   deleteCalendarEvent,
   fetchCalendarEvents,
+  fetchFriendCalendarEvents,
   patchCalendarEvent,
 } from '@/services/calendar';
+import { fetchFriends, type Friend } from '@/services/friends';
 import { AuthSessionExpiredError } from '@/services/auth';
 import type { CalendarEvent, CalendarEventType } from '@/types/calendar';
 
@@ -39,13 +55,14 @@ interface EditingDraft {
   duration: number;
   type: CalendarEventType;
   guests: string[];
+  guestFriendIds: string[];
   description: string;
   color: string;
 }
 
 interface CalendarScreenProps {
   onOpenMenu?: () => void;
-  onNavigateToProfile?: () => void;
+  onNavigateToNotifications?: () => void;
   onNavigateToHome?: () => void;
   onSessionExpired?: () => void;
   initialViewMode?: 'day' | 'week' | 'month' | 'year';
@@ -303,7 +320,7 @@ function MonthDayDroppable({
       }}
       className={`aspect-square rounded-xl p-2 border transition-all ${
         isToday
-          ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white border-purple-500'
+          ? 'border-purple-500/50 bg-purple-500/5 text-purple-600'
           : 'border-border hover:border-purple-500/50'
       } ${isOver ? 'ring-2 ring-purple-400 scale-[1.02] z-10' : ''}`}
     >
@@ -418,8 +435,7 @@ function DayColumn({
 
 export function CalendarScreen({
   onOpenMenu,
-  onNavigateToProfile,
-  onNavigateToHome: _onNavigateToHome,
+  onNavigateToNotifications,
   onSessionExpired,
   initialViewMode = 'week',
   events,
@@ -434,14 +450,27 @@ export function CalendarScreen({
   const [syncError, setSyncError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [showViewMenu, setShowViewMenu] = useState(false);
+  const [showAgendaMenu, setShowAgendaMenu] = useState(false);
+  const [eventDropdown, setEventDropdown] = useState<'start' | 'duration' | null>(null);
+  const [guestSearch, setGuestSearch] = useState('');
+  const [showGuestPicker, setShowGuestPicker] = useState(false);
   const [hourHeightPx, setHourHeightPx] = useState(DEFAULT_HOUR_HEIGHT);
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [selectedFriendId, setSelectedFriendId] = useState('');
 
   const viewMenuRef = useRef<HTMLDivElement>(null);
+  const agendaMenuRef = useRef<HTMLDivElement>(null);
+  const eventDropdownRef = useRef<HTMLDivElement>(null);
+  const guestPickerRef = useRef<HTMLDivElement>(null);
   const hoursScrollRef = useRef<HTMLDivElement>(null);
   const contentScrollRef = useRef<HTMLDivElement>(null);
   const dayScrollRef = useRef<HTMLDivElement>(null);
+  const calendarSwipeRef = useRef<{ pointerId: number; startX: number; startY: number } | null>(null);
+  const suppressSwipeClickRef = useRef(false);
 
   const todayKey = dayKeyFromDate(new Date());
+  const selectedFriend = friends.find((friend) => friend.friendUserId === selectedFriendId) ?? null;
+  const visibleCalendarFriends = friends.filter((friend) => friend.canViewCalendar);
 
   const weekStart = useMemo(() => weekStartForDate(anchorDate), [anchorDate]);
   const weekDayCols = useMemo(() => weekColumns(weekStart), [weekStart]);
@@ -459,8 +488,10 @@ export function CalendarScreen({
       setSyncError(null);
       try {
         const range = fetchRangeIncludingToday(anchorDate, viewMode);
-        const list = await fetchCalendarEvents(range.from, range.to);
-        if (!cancelled) setEvents((prev) => mergeEventsById(prev, list));
+        const list = selectedFriendId
+          ? await fetchFriendCalendarEvents(selectedFriendId, range.from, range.to)
+          : await fetchCalendarEvents(range.from, range.to);
+        if (!cancelled) setEvents(list);
       } catch (e) {
         if (e instanceof AuthSessionExpiredError) {
           onSessionExpired?.();
@@ -474,23 +505,43 @@ export function CalendarScreen({
     return () => {
       cancelled = true;
     };
-  }, [anchorDate, viewMode, setEvents, onSessionExpired]);
+  }, [anchorDate, viewMode, selectedFriendId, setEvents, onSessionExpired]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setFriends(await fetchFriends());
+      } catch (e) {
+        if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
+      }
+    })();
+  }, [onSessionExpired]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (viewMenuRef.current && !viewMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (viewMenuRef.current && !viewMenuRef.current.contains(target)) {
         setShowViewMenu(false);
+      }
+      if (agendaMenuRef.current && !agendaMenuRef.current.contains(target)) {
+        setShowAgendaMenu(false);
+      }
+      if (eventDropdownRef.current && !eventDropdownRef.current.contains(target)) {
+        setEventDropdown(null);
+      }
+      if (guestPickerRef.current && !guestPickerRef.current.contains(target)) {
+        setShowGuestPicker(false);
       }
     };
 
-    if (showViewMenu) {
+    if (showViewMenu || showAgendaMenu || eventDropdown || showGuestPicker) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showViewMenu]);
+  }, [showViewMenu, showAgendaMenu, eventDropdown, showGuestPicker]);
 
   const scrollToNow = useCallback(() => {
     if (viewMode !== 'day' && viewMode !== 'week') return;
@@ -552,6 +603,10 @@ export function CalendarScreen({
   );
 
   const handleDrop = async (eventId: string, newDayKey: string, newHour: number) => {
+    if (selectedFriendId) {
+      setSyncError('Eventos da agenda de amigos não podem ser movidos por aqui.');
+      return;
+    }
     const snapped = snapQuarterHour(newHour);
     const ev = events.find((e) => e.id === eventId);
     if (!ev) return;
@@ -585,6 +640,13 @@ export function CalendarScreen({
 
   const openDraftFromEvent = (event: CalendarEvent) => {
     const p = placement(event);
+    const guestNames = event.guests ?? [];
+    const matchedGuestFriendIds = friends
+      .filter((friend) => guestNames.some((guest) => guest.toLowerCase() === friend.name.toLowerCase()))
+      .map((friend) => friend.friendUserId);
+    setEventDropdown(null);
+    setGuestSearch('');
+    setShowGuestPicker(false);
     setEditingEvent({
       id: event.id,
       title: event.title,
@@ -592,7 +654,8 @@ export function CalendarScreen({
       startHour: snapQuarterHour(p.startHour),
       duration: nearestDuration(p.duration),
       type: event.type,
-      guests: [...(event.guests ?? [])],
+      guests: [...guestNames],
+      guestFriendIds: matchedGuestFriendIds,
       description: event.description ?? '',
       color: event.color ?? PASTEL_COLORS[0].value,
     });
@@ -600,6 +663,9 @@ export function CalendarScreen({
   };
 
   const handleSlotClick = (dayKey: string, hour: number) => {
+    setEventDropdown(null);
+    setGuestSearch('');
+    setShowGuestPicker(false);
     setEditingEvent({
       id: '',
       title: '',
@@ -608,6 +674,7 @@ export function CalendarScreen({
       duration: 1,
       type: 'task',
       guests: [],
+      guestFriendIds: [],
       description: '',
       color: PASTEL_COLORS[0].value,
     });
@@ -615,6 +682,10 @@ export function CalendarScreen({
   };
 
   const handleEventClick = (event: CalendarEvent) => {
+    if (selectedFriendId) {
+      setSyncError('Para alterar a agenda de um amigo, crie uma nova solicitação.');
+      return;
+    }
     openDraftFromEvent(event);
   };
 
@@ -626,13 +697,15 @@ export function CalendarScreen({
       editingEvent.startHour,
       editingEvent.duration,
     );
-    const guestsPayload = editingEvent.guests.filter(Boolean).map((name) => ({ name }));
+    const selectedGuestIds = new Set(editingEvent.guestFriendIds);
+    const guestFriendsForSave = friends.filter((friend) => selectedGuestIds.has(friend.friendUserId));
+    const guestsPayload = guestFriendsForSave.map((friend) => ({ name: friend.name, email: friend.email }));
 
     try {
       setActionLoading(true);
       setSyncError(null);
       if (isCreatingNew) {
-        const created = await createCalendarEvent({
+        const payload = {
           title: editingEvent.title.trim(),
           startsAt,
           endsAt,
@@ -640,8 +713,51 @@ export function CalendarScreen({
           color: editingEvent.color,
           description: editingEvent.description.trim() || null,
           guests: guestsPayload,
-        });
-        setEvents((prev) => mergeEventsById(prev, [created]));
+        };
+        const guestCalendarTargets = guestFriendsForSave.filter(
+          (friend) => friend.friendUserId !== selectedFriendId,
+        );
+        let directGuestCreates = 0;
+        let requestedGuestCreates = 0;
+        let failedGuestCreates = 0;
+
+        if (selectedFriendId) {
+          const result = await createFriendCalendarEventRequest(selectedFriendId, payload);
+          if (result.event) setEvents((prev) => mergeEventsById(prev, [result.event as CalendarEvent]));
+          setSyncError(
+            result.mode === 'requested'
+              ? 'Pedido enviado para aprovação do amigo.'
+              : 'Evento criado na agenda do amigo.',
+          );
+        } else {
+          const created = await createCalendarEvent(payload);
+          setEvents((prev) => mergeEventsById(prev, [created]));
+        }
+
+        for (const friend of guestCalendarTargets) {
+          try {
+            const result = await createFriendCalendarEventRequest(friend.friendUserId, payload);
+            if (result.mode === 'requested') requestedGuestCreates += 1;
+            else directGuestCreates += 1;
+          } catch (e) {
+            if (e instanceof AuthSessionExpiredError) throw e;
+            failedGuestCreates += 1;
+          }
+        }
+
+        if (guestCalendarTargets.length > 0) {
+          const parts = [];
+          if (directGuestCreates > 0) {
+            parts.push(`${directGuestCreates} agenda${directGuestCreates > 1 ? 's' : ''} atualizada${directGuestCreates > 1 ? 's' : ''}`);
+          }
+          if (requestedGuestCreates > 0) {
+            parts.push(`${requestedGuestCreates} pedido${requestedGuestCreates > 1 ? 's' : ''} enviado${requestedGuestCreates > 1 ? 's' : ''}`);
+          }
+          if (failedGuestCreates > 0) {
+            parts.push(`${failedGuestCreates} convite${failedGuestCreates > 1 ? 's' : ''} não salvo${failedGuestCreates > 1 ? 's' : ''}`);
+          }
+          if (parts.length > 0) setSyncError(`Convidados: ${parts.join(', ')}.`);
+        }
       } else {
         const updated = await patchCalendarEvent(editingEvent.id, {
           title: editingEvent.title.trim(),
@@ -657,6 +773,9 @@ export function CalendarScreen({
 
       setEditingEvent(null);
       setIsCreatingNew(false);
+      setEventDropdown(null);
+      setGuestSearch('');
+      setShowGuestPicker(false);
     } catch (e) {
       if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
       else setSyncError(e instanceof Error ? e.message : 'Erro ao salvar.');
@@ -674,6 +793,9 @@ export function CalendarScreen({
       setEvents((prev) => prev.filter((e) => e.id !== editingEvent.id));
       setEditingEvent(null);
       setIsCreatingNew(false);
+      setEventDropdown(null);
+      setGuestSearch('');
+      setShowGuestPicker(false);
     } catch (e) {
       if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
       else setSyncError(e instanceof Error ? e.message : 'Erro ao excluir.');
@@ -685,9 +807,16 @@ export function CalendarScreen({
   const handleCancelEdit = () => {
     setEditingEvent(null);
     setIsCreatingNew(false);
+    setEventDropdown(null);
+    setGuestSearch('');
+    setShowGuestPicker(false);
   };
 
   const handleEventResize = async (id: string, newDuration: number) => {
+    if (selectedFriendId) {
+      setSyncError('Eventos da agenda de amigos não podem ser redimensionados por aqui.');
+      return;
+    }
     const ev = events.find((e) => e.id === id);
     if (!ev) return;
     const snapped = Math.max(QUARTER_STEP, Math.round(newDuration * 4) / 4);
@@ -705,11 +834,66 @@ export function CalendarScreen({
   };
 
   const monthCells = useMemo(() => monthGridCells(startOfDay(new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1))), [anchorDate]);
-  const calendarTitle = formatCalendarTitle(anchorDate, viewMode);
   const dayViewKey = dayKeyFromDate(startOfDay(anchorDate));
   const dayViewWeekStrip = useMemo(() => weekColumns(weekStartForDate(anchorDate)), [anchorDate]);
 
   const shift = (dir: -1 | 1) => setAnchorDate((d) => shiftAnchor(d, viewMode, dir));
+
+  const selectedGuestFriends = useMemo(() => {
+    const selectedIds = new Set(editingEvent?.guestFriendIds ?? []);
+    return friends.filter((friend) => selectedIds.has(friend.friendUserId));
+  }, [editingEvent?.guestFriendIds, friends]);
+
+  const guestFriendCandidates = useMemo(() => {
+    const selectedIds = new Set(editingEvent?.guestFriendIds ?? []);
+    const query = guestSearch.trim().toLowerCase();
+    return friends
+      .filter((friend) => friend.friendUserId !== selectedFriendId)
+      .filter((friend) => friend.canCreateCalendarEventsDirect || friend.canRequestCalendarEvents)
+      .filter((friend) => !selectedIds.has(friend.friendUserId))
+      .filter((friend) => {
+        if (!query) return true;
+        return [friend.name, friend.nickname, friend.email]
+          .filter(Boolean)
+          .some((value) => value.toLowerCase().includes(query));
+      });
+  }, [editingEvent?.guestFriendIds, friends, guestSearch, selectedFriendId]);
+
+  const handleCalendarSwipeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button,input,textarea,select,a,.event-card-apple,[role="button"]')) return;
+
+    calendarSwipeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  };
+
+  const handleCalendarSwipeEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = calendarSwipeRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    calendarSwipeRef.current = null;
+
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    if (Math.abs(deltaX) < 80 || Math.abs(deltaX) < Math.abs(deltaY) * 1.4) return;
+
+    suppressSwipeClickRef.current = true;
+    shift(deltaX < 0 ? 1 : -1);
+  };
+
+  const handleCalendarSwipeCancel = () => {
+    calendarSwipeRef.current = null;
+  };
+
+  const handleCalendarClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!suppressSwipeClickRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressSwipeClickRef.current = false;
+  };
 
   return (
     <>
@@ -725,21 +909,105 @@ export function CalendarScreen({
                 <Menu className="w-5 h-5 text-muted-foreground" />
               </button>
               <h1 className="text-base font-medium text-muted-foreground">Kiki</h1>
-              <button
-                type="button"
-                onClick={onNavigateToProfile}
-                className={`w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm btn-apple-gradient shadow-sm`}
-              >
-                <span className="text-white font-medium">M</span>
-              </button>
+              <AppNotificationsBell onNavigateToAll={onNavigateToNotifications} />
             </div>
 
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">Planejamento</h2>
+            <div className="mb-4 flex items-center justify-end gap-2">
+              <div className="relative" ref={viewMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowViewMenu(!showViewMenu)}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md transition-all hover:shadow-lg btn-apple-gradient"
+                  aria-label="Trocar visualização"
+                >
+                  <AlignJustify className="h-5 w-5" />
+                </button>
+
+                {showViewMenu && (
+                  <div className="absolute right-0 top-[calc(100%+0.375rem)] z-[220] min-w-36 overflow-hidden rounded-xl border border-border bg-background shadow-lg">
+                    {(['day', 'week', 'month'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          setViewMode(mode);
+                          setShowViewMenu(false);
+                        }}
+                        className={`w-full px-3 py-1.5 text-xs text-left hover:bg-muted btn-apple ${
+                          viewMode === mode ? 'bg-purple-500/10 text-purple-500' : ''
+                        }`}
+                      >
+                        {mode === 'day' ? 'Dia' : mode === 'week' ? 'Semana' : 'Mês'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="relative" ref={agendaMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowAgendaMenu((prev) => !prev)}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md transition-all hover:shadow-lg btn-apple-gradient"
+                  aria-label="Selecionar agenda"
+                >
+                  <Users className="h-5 w-5" />
+                </button>
+
+                  {showAgendaMenu ? (
+                    <div className="absolute right-0 top-[calc(100%+0.375rem)] z-[220] min-w-56 overflow-hidden rounded-xl border border-border bg-background shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedFriendId('');
+                          setSyncError(null);
+                          setShowAgendaMenu(false);
+                        }}
+                        className={`btn-apple flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-muted/45 ${
+                          !selectedFriendId ? 'text-purple-600' : 'text-foreground'
+                        }`}
+                      >
+                        <span>Minha agenda</span>
+                        {!selectedFriendId ? <Check className="w-4 h-4" /> : null}
+                      </button>
+
+                      {visibleCalendarFriends.length > 0 ? (
+                        visibleCalendarFriends.map((friend) => (
+                          <button
+                            key={friend.friendUserId}
+                            type="button"
+                            onClick={() => {
+                              setSelectedFriendId(friend.friendUserId);
+                              setSyncError(null);
+                              setShowAgendaMenu(false);
+                            }}
+                            className={`btn-apple flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-muted/45 ${
+                              selectedFriendId === friend.friendUserId ? 'text-purple-600' : 'text-foreground'
+                            }`}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate">Agenda de {friend.name}</span>
+                              <span className="block truncate text-xs text-muted-foreground">@{friend.nickname}</span>
+                            </span>
+                            {selectedFriendId === friend.friendUserId ? <Check className="w-4 h-4 shrink-0" /> : null}
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-3 py-2.5 text-xs text-muted-foreground">
+                          Nenhuma agenda de amigo disponível.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+
               <button
                 type="button"
                 onClick={() => {
                   const dk = defaultNewDayKey();
+                  setEventDropdown(null);
+                  setGuestSearch('');
+                  setShowGuestPicker(false);
                   setEditingEvent({
                     id: '',
                     title: '',
@@ -748,62 +1016,27 @@ export function CalendarScreen({
                     duration: 1,
                     type: 'task',
                     guests: [],
+                    guestFriendIds: [],
                     description: '',
                     color: PASTEL_COLORS[0].value,
                   });
                   setIsCreatingNew(true);
                 }}
                 disabled={actionLoading}
-                className={`flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-xl btn-apple-gradient shadow-md hover:shadow-lg transition-all disabled:opacity-50`}
+                className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md transition-all hover:shadow-lg btn-apple-gradient disabled:opacity-50"
+                aria-label="Criar evento"
               >
-                <Plus className="w-4 h-4" />
-                <span className="text-sm font-medium">Novo</span>
+                <Plus className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="flex items-center justify-between mb-3 relative" ref={viewMenuRef}>
-              <button
-                type="button"
-                onClick={() => shift(-1)}
-                className="w-9 h-9 rounded-xl bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowViewMenu(!showViewMenu)}
-                className="hover:bg-muted px-4 py-2 rounded-xl btn-apple transition-colors capitalize"
-              >
-                <h3 className="text-sm font-medium">{calendarTitle}</h3>
-              </button>
-              <button
-                type="button"
-                onClick={() => shift(1)}
-                className="w-9 h-9 rounded-xl bg-card border border-border hover:bg-muted flex items-center justify-center btn-apple transition-colors"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-
-              {showViewMenu && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 bg-background border border-border rounded-lg shadow-lg overflow-hidden z-[200] min-w-[110px]">
-                  {(['day', 'week', 'month', 'year'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => {
-                        setViewMode(mode);
-                        setShowViewMenu(false);
-                      }}
-                      className={`w-full px-3 py-1.5 text-xs text-left hover:bg-muted btn-apple ${
-                        viewMode === mode ? 'bg-purple-500/10 text-purple-500' : ''
-                      }`}
-                    >
-                      {mode === 'day' ? 'Dia' : mode === 'week' ? 'Semana' : mode === 'month' ? 'Mês' : 'Ano'}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {selectedFriend ? (
+              <p className="mb-3 text-[11px] text-muted-foreground">
+                {selectedFriend.canCreateCalendarEventsDirect
+                  ? 'Você pode criar eventos diretamente nesta agenda.'
+                  : 'Novos eventos serão enviados para aprovação.'}
+              </p>
+            ) : null}
 
             {(syncLoading || syncError) && (
               <div className="mt-2 text-xs text-muted-foreground">
@@ -838,10 +1071,26 @@ export function CalendarScreen({
             )}
           </div>
 
+          <div
+            className="flex-1 min-h-0 overflow-hidden flex flex-col"
+            onPointerDown={handleCalendarSwipeStart}
+            onPointerUp={handleCalendarSwipeEnd}
+            onPointerCancel={handleCalendarSwipeCancel}
+            onClickCapture={handleCalendarClickCapture}
+          >
           {viewMode === 'week' && (
             <div className="flex-1 flex overflow-hidden">
               <div className="w-10 flex-shrink-0 bg-background z-30">
-                <div className="h-[42px]" />
+                <div className="flex h-[42px] items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={() => shift(-1)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:border-purple-500/40 hover:text-purple-600 btn-apple"
+                    aria-label="Semana anterior"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                </div>
                 <div
                   ref={hoursScrollRef}
                   className="overflow-y-auto scrollbar-hide"
@@ -865,27 +1114,35 @@ export function CalendarScreen({
               </div>
 
               <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="flex flex-shrink-0 bg-background" style={{ height: '42px' }}>
-                  {weekDayCols.map((item) => {
-                    const isToday = item.dayKey === todayKey;
-                    return (
-                      <CalendarHeaderDayDrop
-                        key={item.dayKey}
-                        dayKey={item.dayKey}
-                        onDropKeepTime={handleDropKeepTime}
-                        className="flex-1 min-w-0"
-                      >
-                        <div
-                          className={`text-center py-1.5 rounded-xl m-0.5 ${
-                            isToday ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white' : ''
-                          }`}
+                <div className="relative flex flex-shrink-0 bg-background" style={{ height: '42px' }}>
+                  <div className="flex flex-1 min-w-0">
+                    {weekDayCols.map((item) => {
+                      const isToday = item.dayKey === todayKey;
+                      return (
+                        <CalendarHeaderDayDrop
+                          key={item.dayKey}
+                          dayKey={item.dayKey}
+                          onDropKeepTime={handleDropKeepTime}
+                          className="flex-1 min-w-0"
                         >
-                          <p className="text-[10px] opacity-70 capitalize">{item.weekdayShort}</p>
-                          <p className="text-xs font-medium">{format(item.date, 'd')}</p>
-                        </div>
-                      </CalendarHeaderDayDrop>
-                    );
-                  })}
+                          <div className={`text-center py-1.5 rounded-xl m-0.5 ${isToday ? 'text-purple-600' : ''}`}>
+                            <p className="text-[10px] opacity-70 capitalize">{item.weekdayShort}</p>
+                            <p className="text-xs font-medium">{format(item.date, 'd')}</p>
+                            {isToday ? <span className="mx-auto mt-0.5 block h-1 w-1 rounded-full bg-purple-500" /> : null}
+                          </div>
+                        </CalendarHeaderDayDrop>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => shift(1)}
+                    className="absolute right-1 top-1/2 z-40 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/95 text-muted-foreground shadow-sm transition-colors hover:border-purple-500/40 hover:text-purple-600 btn-apple"
+                    aria-label="Próxima semana"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
                 </div>
 
                 <div
@@ -918,35 +1175,57 @@ export function CalendarScreen({
             <div className="flex-1 flex flex-col overflow-hidden">
               <div className="flex-shrink-0 bg-background z-40">
                 <div className="flex" style={{ height: '42px' }}>
-                  <div className="w-10 flex-shrink-0" />
-                  <div className="flex-1 flex px-1 gap-0.5 min-w-0">
-                    {dayViewWeekStrip.map((item) => {
-                      const isSelected = item.dayKey === dayViewKey;
-                      const isToday = item.dayKey === todayKey;
-                      return (
-                        <CalendarHeaderDayDrop
-                          key={item.dayKey}
-                          dayKey={item.dayKey}
-                          onDropKeepTime={handleDropKeepTime}
-                          className="flex-1 min-w-0"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setAnchorDate(startOfDay(item.date))}
-                            className={`w-full text-center py-1 rounded-lg m-0.5 btn-apple transition-colors ${
-                              isSelected
-                                ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-md'
-                                : isToday
-                                  ? 'bg-muted ring-1 ring-purple-500/50'
-                                  : 'hover:bg-muted/70 text-foreground'
-                            }`}
+                  <div className="w-10 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => shift(-1)}
+                      className="mx-auto mt-1 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:border-purple-500/40 hover:text-purple-600 btn-apple"
+                      aria-label="Dia anterior"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="relative flex-1 min-w-0">
+                    <div className="flex px-1 gap-0.5 min-w-0">
+                      {dayViewWeekStrip.map((item) => {
+                        const isSelected = item.dayKey === dayViewKey;
+                        const isToday = item.dayKey === todayKey;
+                        return (
+                          <CalendarHeaderDayDrop
+                            key={item.dayKey}
+                            dayKey={item.dayKey}
+                            onDropKeepTime={handleDropKeepTime}
+                            className="flex-1 min-w-0"
                           >
-                            <p className="text-[9px] opacity-80 capitalize leading-tight truncate">{item.weekdayShort}</p>
-                            <p className="text-[11px] font-semibold leading-tight">{format(item.date, 'd')}</p>
-                          </button>
-                        </CalendarHeaderDayDrop>
-                      );
-                    })}
+                            <button
+                              type="button"
+                              onClick={() => setAnchorDate(startOfDay(item.date))}
+                              className={`w-full text-center py-1 rounded-lg m-0.5 btn-apple transition-colors ${
+                                isSelected
+                                  ? 'text-purple-600'
+                                  : isToday
+                                    ? 'text-purple-500'
+                                    : 'hover:bg-muted/70 text-foreground'
+                              }`}
+                            >
+                              <p className="text-[9px] opacity-80 capitalize leading-tight truncate">{item.weekdayShort}</p>
+                              <p className="text-[11px] font-semibold leading-tight">{format(item.date, 'd')}</p>
+                              {isSelected ? <span className="mx-auto mt-0.5 block h-1 w-1 rounded-full bg-purple-500" /> : null}
+                            </button>
+                          </CalendarHeaderDayDrop>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => shift(1)}
+                      className="absolute right-1 top-1/2 z-40 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/95 text-muted-foreground shadow-sm transition-colors hover:border-purple-500/40 hover:text-purple-600 btn-apple"
+                      aria-label="Próximo dia"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1018,7 +1297,7 @@ export function CalendarScreen({
                               <MonthEventChip key={event.id} event={event} onOpen={() => openDraftFromEvent(event)} />
                             ))}
                             {dayEvents.length > 2 && (
-                              <div className={`text-[8px] ${isToday ? 'text-white/80' : 'text-muted-foreground'}`}>
+                              <div className={`text-[8px] ${isToday ? 'text-purple-500/80' : 'text-muted-foreground'}`}>
                                 +{dayEvents.length - 2}
                               </div>
                             )}
@@ -1074,6 +1353,7 @@ export function CalendarScreen({
               </div>
             </div>
           )}
+          </div>
 
           {editingEvent && (
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-end sm:items-center justify-center p-3">
@@ -1098,7 +1378,7 @@ export function CalendarScreen({
                         value={editingEvent.title}
                         onChange={(e) => setEditingEvent({ ...editingEvent, title: e.target.value })}
                         placeholder="Digite o título do compromisso"
-                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
+                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-background border border-border focus:border-purple-500 focus:outline-none input-apple"
                         autoFocus
                       />
                     </div>
@@ -1109,43 +1389,79 @@ export function CalendarScreen({
                         type="date"
                         value={editingEvent.dateKey}
                         onChange={(e) => setEditingEvent({ ...editingEvent, dateKey: e.target.value })}
-                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
+                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-background border border-border focus:border-purple-500 focus:outline-none input-apple"
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3" ref={eventDropdownRef}>
                       <div>
                         <label className="block text-xs mb-1.5 text-muted-foreground">Hora início</label>
-                        <select
-                          value={editingEvent.startHour}
-                          onChange={(e) =>
-                            setEditingEvent({ ...editingEvent, startHour: parseFloat(e.target.value) })
-                          }
-                          className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
-                        >
-                          {START_HOUR_OPTIONS.map((h) => (
-                            <option key={h} value={h}>
-                              {formatHourOptionLabel(h)}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setEventDropdown((current) => (current === 'start' ? null : 'start'))}
+                            className="btn-apple flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2.5 text-left text-sm hover:bg-muted/30"
+                          >
+                            <span>{formatHourOptionLabel(editingEvent.startHour)}</span>
+                            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${eventDropdown === 'start' ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {eventDropdown === 'start' ? (
+                            <div className="absolute left-0 right-0 top-[calc(100%+0.375rem)] z-[230] max-h-56 overflow-y-auto rounded-xl border border-border bg-background shadow-lg">
+                              {START_HOUR_OPTIONS.map((h) => (
+                                <button
+                                  key={h}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingEvent({ ...editingEvent, startHour: h });
+                                    setEventDropdown(null);
+                                  }}
+                                  className={`btn-apple flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted/45 ${
+                                    editingEvent.startHour === h ? 'text-purple-600' : 'text-foreground'
+                                  }`}
+                                >
+                                  <span>{formatHourOptionLabel(h)}</span>
+                                  {editingEvent.startHour === h ? <Check className="h-4 w-4" /> : null}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
 
                       <div>
                         <label className="block text-xs mb-1.5 text-muted-foreground">Duração</label>
-                        <select
-                          value={editingEvent.duration}
-                          onChange={(e) =>
-                            setEditingEvent({ ...editingEvent, duration: parseFloat(e.target.value) })
-                          }
-                          className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
-                        >
-                          {DURATION_OPTIONS.map((d) => (
-                            <option key={d} value={d}>
-                              {formatDurationLabel(d)}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setEventDropdown((current) => (current === 'duration' ? null : 'duration'))}
+                            className="btn-apple flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-background px-3 py-2.5 text-left text-sm hover:bg-muted/30"
+                          >
+                            <span>{formatDurationLabel(editingEvent.duration)}</span>
+                            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${eventDropdown === 'duration' ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {eventDropdown === 'duration' ? (
+                            <div className="absolute left-0 right-0 top-[calc(100%+0.375rem)] z-[230] max-h-56 overflow-y-auto rounded-xl border border-border bg-background shadow-lg">
+                              {DURATION_OPTIONS.map((d) => (
+                                <button
+                                  key={d}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingEvent({ ...editingEvent, duration: d });
+                                    setEventDropdown(null);
+                                  }}
+                                  className={`btn-apple flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted/45 ${
+                                    editingEvent.duration === d ? 'text-purple-600' : 'text-foreground'
+                                  }`}
+                                >
+                                  <span>{formatDurationLabel(d)}</span>
+                                  {editingEvent.duration === d ? <Check className="h-4 w-4" /> : null}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
 
@@ -1195,21 +1511,94 @@ export function CalendarScreen({
                         <Users className="w-3.5 h-3.5 inline mr-1" />
                         Convidados
                       </label>
-                      <input
-                        type="text"
-                        value={editingEvent.guests.join(', ')}
-                        onChange={(e) =>
-                          setEditingEvent({
-                            ...editingEvent,
-                            guests: e.target.value
-                              .split(',')
-                              .map((g) => g.trim())
-                              .filter(Boolean),
-                          })
-                        }
-                        placeholder="Separar por vírgula"
-                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
-                      />
+                      <div className="relative" ref={guestPickerRef}>
+                        <input
+                          type="text"
+                          value={guestSearch}
+                          onChange={(e) => {
+                            setGuestSearch(e.target.value);
+                            setShowGuestPicker(true);
+                          }}
+                          onFocus={() => setShowGuestPicker(true)}
+                          onClick={() => setShowGuestPicker(true)}
+                          placeholder="Buscar amigo pelo nome"
+                          className="w-full px-3 py-2.5 text-sm rounded-xl bg-background border border-border focus:border-purple-500 focus:outline-none input-apple"
+                        />
+
+                        {showGuestPicker ? (
+                          <div className="absolute left-0 right-0 top-[calc(100%+0.375rem)] z-[230] max-h-56 overflow-y-auto rounded-xl border border-border bg-background shadow-lg">
+                            {guestFriendCandidates.length > 0 ? (
+                              guestFriendCandidates.map((friend) => (
+                                <button
+                                  key={friend.friendUserId}
+                                  type="button"
+                                  onClick={() => {
+                                    const nextIds = [...editingEvent.guestFriendIds, friend.friendUserId];
+                                    const nextNames = friends
+                                      .filter((item) => nextIds.includes(item.friendUserId))
+                                      .map((item) => item.name);
+                                    setEditingEvent({
+                                      ...editingEvent,
+                                      guestFriendIds: nextIds,
+                                      guests: nextNames,
+                                    });
+                                    setGuestSearch('');
+                                    setShowGuestPicker(false);
+                                  }}
+                                  className="btn-apple flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-muted/45"
+                                >
+                                  <span className="min-w-0">
+                                    <span className="block truncate">{friend.name}</span>
+                                    <span className="block truncate text-xs text-muted-foreground">
+                                      @{friend.nickname}
+                                    </span>
+                                  </span>
+                                  <span className="shrink-0 text-[10px] text-purple-600">
+                                    {friend.canCreateCalendarEventsDirect ? 'Salva direto' : 'Envia pedido'}
+                                  </span>
+                                </button>
+                              ))
+                            ) : (
+                              <p className="px-3 py-2.5 text-xs text-muted-foreground">
+                                Nenhum amigo disponível.
+                              </p>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {selectedGuestFriends.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {selectedGuestFriends.map((friend) => (
+                            <span
+                              key={friend.friendUserId}
+                              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-xs text-foreground"
+                            >
+                              <span className="truncate">{friend.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextIds = editingEvent.guestFriendIds.filter(
+                                    (id) => id !== friend.friendUserId,
+                                  );
+                                  const nextNames = friends
+                                    .filter((item) => nextIds.includes(item.friendUserId))
+                                    .map((item) => item.name);
+                                  setEditingEvent({
+                                    ...editingEvent,
+                                    guestFriendIds: nextIds,
+                                    guests: nextNames,
+                                  });
+                                }}
+                                className="text-muted-foreground hover:text-purple-600"
+                                aria-label={`Remover ${friend.name}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div>
@@ -1218,7 +1607,7 @@ export function CalendarScreen({
                         value={editingEvent.description}
                         onChange={(e) => setEditingEvent({ ...editingEvent, description: e.target.value })}
                         rows={3}
-                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple resize-none"
+                        className="w-full px-3 py-2.5 text-sm rounded-xl bg-background border border-border focus:border-purple-500 focus:outline-none input-apple resize-none"
                         placeholder="Adicione detalhes..."
                       />
                     </div>

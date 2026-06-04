@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -38,6 +40,7 @@ class NotePatch(BaseModel):
     is_pinned: bool | None = None
     is_locked: bool | None = None
     tags: list[str] | None = None
+    expected_updated_at: datetime | None = None
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -70,5 +73,30 @@ class NoteResponse(BaseModel):
     is_pinned: bool
     is_locked: bool
     tags: list[str]
+    permission_role: str = "owner"
+    is_shared: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class NoteShareRequest(BaseModel):
+    user_id: str
+    role: Literal["editor", "viewer"] = "editor"
+
+
+class NoteCollaboratorPatch(BaseModel):
+    role: Literal["editor", "viewer"]
+
+
+class NoteCollaboratorResponse(BaseModel):
+    id: str
+    note_id: str
+    user_id: str
+    role: str
+    invited_by: str | None = None
+    accepted_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    name: str | None = None
+    email: str | None = None
+    nickname: str | None = None

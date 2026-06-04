@@ -60,11 +60,13 @@ export function AdminUsersScreen({
 
   const [createName, setCreateName] = useState('');
   const [createEmail, setCreateEmail] = useState('');
+  const [createNickname, setCreateNickname] = useState('');
   const [createPassword, setCreatePassword] = useState('');
   const [createRole, setCreateRole] = useState<'admin' | 'user'>('user');
 
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editNickname, setEditNickname] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editRole, setEditRole] = useState<'admin' | 'user'>('user');
   const [editActive, setEditActive] = useState(true);
@@ -93,6 +95,7 @@ export function AdminUsersScreen({
     setFormError('');
     setCreateName('');
     setCreateEmail('');
+    setCreateNickname('');
     setCreatePassword('');
     setCreateRole('user');
     setCreateOpen(true);
@@ -103,6 +106,7 @@ export function AdminUsersScreen({
     setEditing(u);
     setEditName(u.name);
     setEditEmail(u.email);
+    setEditNickname(u.nickname);
     setEditPassword('');
     setEditRole(u.role);
     setEditActive(u.is_active);
@@ -116,6 +120,7 @@ export function AdminUsersScreen({
       await createAdminUser({
         name: createName.trim(),
         email: createEmail.trim(),
+        nickname: createNickname.trim() || undefined,
         password: createPassword,
         role: createRole,
       });
@@ -140,6 +145,7 @@ export function AdminUsersScreen({
     const patch: Parameters<typeof updateAdminUser>[1] = {};
     if (editName.trim() !== editing.name) patch.name = editName.trim();
     if (editEmail.trim().toLowerCase() !== editing.email.toLowerCase()) patch.email = editEmail.trim();
+    if (editNickname.trim() !== editing.nickname) patch.nickname = editNickname.trim();
     if (editPassword.length > 0) patch.password = editPassword;
     if (editRole !== editing.role) patch.role = editRole;
     if (editActive !== editing.is_active) patch.is_active = editActive;
@@ -231,7 +237,7 @@ export function AdminUsersScreen({
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="font-medium truncate">{u.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                    <p className="text-xs text-muted-foreground truncate">@{u.nickname} • {u.email}</p>
                     <p className="text-[10px] text-muted-foreground mt-1">Criado em {formatCreatedAt(u.created_at)}</p>
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
@@ -321,6 +327,17 @@ export function AdminUsersScreen({
                 />
               </div>
               <div>
+                <label className="text-xs font-medium text-muted-foreground">Nickname</label>
+                <input
+                  minLength={3}
+                  maxLength={60}
+                  value={createNickname}
+                  onChange={(ev) => setCreateNickname(ev.target.value)}
+                  placeholder="Opcional — gerado do e-mail se vazio"
+                  className="mt-1 w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm input-apple"
+                />
+              </div>
+              <div>
                 <label className="text-xs font-medium text-muted-foreground">Senha</label>
                 <input
                   required
@@ -388,6 +405,17 @@ export function AdminUsersScreen({
                   type="email"
                   value={editEmail}
                   onChange={(ev) => setEditEmail(ev.target.value)}
+                  className="mt-1 w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm input-apple"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Nickname</label>
+                <input
+                  required
+                  minLength={3}
+                  maxLength={60}
+                  value={editNickname}
+                  onChange={(ev) => setEditNickname(ev.target.value)}
                   className="mt-1 w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm input-apple"
                 />
               </div>

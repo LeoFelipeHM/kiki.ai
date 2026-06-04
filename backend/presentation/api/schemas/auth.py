@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr, Field
 class RegisterRequest(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     email: EmailStr
+    nickname: str | None = Field(default=None, min_length=3, max_length=60)
     password: str = Field(min_length=1, max_length=128)
 
 
@@ -34,9 +35,15 @@ class TokenResponse(BaseModel):
     expires_in: int
 
 
+class UpdateProfileRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=150)
+    nickname: str | None = Field(default=None, min_length=3, max_length=60)
+
+
 class UserResponse(BaseModel):
     id: str
     name: str
     email: EmailStr
+    nickname: str
     role: str
     is_active: bool

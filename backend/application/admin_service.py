@@ -2,6 +2,7 @@ from typing import Any, Literal
 
 import psycopg
 
+from application.auth_service import normalize_user_nickname
 from application.bootstrap_defaults import bootstrap_user_defaults
 from application.errors import (
     AdminDeleteSelfError,
@@ -35,12 +36,17 @@ class AdminService:
         email: str,
         password: str,
         role: Literal["admin", "user"],
+        nickname: str | None = None,
     ) -> dict[str, Any]:
         if self._users.admin_email_taken(email):
             raise AdminEmailConflictError("E-mail já cadastrado.")
 
+        normalized_nickname = normalize_user_nickname(nickname, email)
+        if self._users.nickname_exists(normalized_nickname):
+            raise ValueError("Este nickname já está em uso.")
+
         password_hash = self._passwords.hash(password)
-        row = self._users.admin_insert(name, email, role, password_hash)
+        row = self._users.admin_insert(name, email, normalized_nickname, role, password_hash)
         bootstrap_user_defaults(self._conn, row["id"])
         self._conn.commit()
         return row
@@ -52,6 +58,7 @@ class AdminService:
         current_admin_id: str,
         name: str | None = None,
         email: str | None = None,
+        nickname: str | None = None,
         password: str | None = None,
         role: Literal["admin", "user"] | None = None,
         is_active: bool | None = None,
@@ -62,6 +69,12 @@ class AdminService:
         if name is not None:
             updates.append("name = %s")
             values.append(name)
+        if nickname is not None:
+            normalized_nickname = normalize_user_nickname(nickname.strip(), nickname.strip())
+            if self._users.nickname_taken_by_other(normalized_nickname, user_id):
+                raise ValueError("Este nickname já está em uso.")
+            updates.append("nickname = %s")
+            values.append(normalized_nickname)
         if email is not None:
             updates.append("email = lower(%s)")
             values.append(email)

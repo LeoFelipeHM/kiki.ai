@@ -2,6 +2,7 @@ import { Calendar, CheckCircle2, Circle, Clock, Menu, MessageCircle } from 'luci
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { format, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { AppNotificationsBell } from './HomeNotificationsBell';
 import { VoiceChatOrb } from './VoiceChatOrb';
 import { useTheme } from './ThemeProvider';
 import { useAppShell } from '@/context/AppShellContext';
@@ -12,7 +13,7 @@ import type { CalendarEvent } from '@/types/calendar';
 interface HomeScreenProps {
   onNavigateToChat?: () => void;
   onNavigateToCalendar?: (viewMode?: 'day' | 'week' | 'month' | 'year') => void;
-  onNavigateToProfile?: () => void;
+  onNavigateToNotifications?: () => void;
   onOpenMenu?: () => void;
   events: CalendarEvent[];
   userName?: string;
@@ -22,7 +23,14 @@ function isTaskDone(event: CalendarEvent): boolean {
   return (event.status ?? 'confirmed') === 'completed';
 }
 
-export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateToProfile, onOpenMenu, events, userName = 'Maria' }: HomeScreenProps) {
+export function HomeScreen({
+  onNavigateToChat,
+  onNavigateToCalendar,
+  onNavigateToNotifications,
+  onOpenMenu,
+  events,
+  userName = 'Maria',
+}: HomeScreenProps) {
   const { themeColor } = useTheme();
   const { setEvents, onSessionExpired } = useAppShell();
   const currentHour = new Date().getHours();
@@ -166,12 +174,7 @@ export function HomeScreen({ onNavigateToChat, onNavigateToCalendar, onNavigateT
               <Menu className="w-5 h-5 text-muted-foreground" />
             </button>
             <h1 className="text-base font-medium text-muted-foreground">Kiki</h1>
-            <button
-              onClick={onNavigateToProfile}
-              className={`w-10 h-10 rounded-full bg-gradient-to-br ${themeColor} flex items-center justify-center text-sm btn-apple-gradient shadow-sm`}
-            >
-              <span className="text-white font-medium">{userName.charAt(0).toUpperCase()}</span>
-            </button>
+            <AppNotificationsBell onNavigateToAll={onNavigateToNotifications} />
           </div>
 
           {/* Greeting */}

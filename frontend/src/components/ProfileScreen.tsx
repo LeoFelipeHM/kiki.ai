@@ -26,6 +26,7 @@ interface ProfileScreenProps {
   profileData?: {
     name: string;
     email: string;
+    nickname: string;
     phone: string;
     birthdate: string;
     language: string;
@@ -36,6 +37,7 @@ interface ProfileScreenProps {
 export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNavigation, onIntegrationNavigation, onLogout, onReminderStyleClick, profileData = {
   name: 'Maria Silva',
   email: 'maria.silva@email.com',
+  nickname: 'maria_silva',
   phone: '+55 (11) 98765-4321',
   birthdate: '15 de Março, 1995',
   language: 'Português (Brasil)',
@@ -48,6 +50,7 @@ export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNa
       title: 'Perfil Pessoal',
       items: [
         { icon: User, label: 'Nome completo', value: profileData.name },
+        { icon: User, label: 'Nickname', value: profileData.nickname ? `@${profileData.nickname}` : '' },
         { icon: Mail, label: 'E-mail', value: profileData.email },
         { icon: Phone, label: 'Telefone', value: profileData.phone },
         { icon: Calendar, label: 'Data de nascimento', value: profileData.birthdate },
@@ -97,6 +100,9 @@ export function ProfileScreen({ onNavigateBack, onEditProfileField, onSecurityNa
             </button>
           </div>
           <h1 className="text-2xl mb-1 mt-3">{profileData.name}</h1>
+          {profileData.nickname ? (
+            <p className="text-sm text-muted-foreground">@{profileData.nickname}</p>
+          ) : null}
           <p className="text-sm text-muted-foreground">{profileData.email}</p>
         </div>
 

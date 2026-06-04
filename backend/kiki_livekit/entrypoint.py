@@ -21,11 +21,15 @@ from application.azure_voice_ids import AZURE_PT_BR_VOICE_IDS_FROZEN
 from application.agents_service import AgentsService
 from application.calendar_service import CalendarService
 from application.contacts_service import ContactsService
+from application.friends_service import FriendsService
 from application.notes_service import NotesService
+from application.notifications_service import NotificationsService
 from infrastructure.persistence.postgres_agents_repository import PostgresAgentsRepository
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
 from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
+from infrastructure.persistence.postgres_friends_repository import PostgresFriendsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
+from infrastructure.persistence.postgres_notifications_repository import PostgresNotificationsRepository
 from llm.openai_chat_client import generate_reply_with_tools
 from llm.prompts.kiki_system import KIKI_SYSTEM_PROMPT
 from .config import VoiceRuntimeConfig, load_voice_runtime_config
@@ -149,6 +153,9 @@ class _VoiceSessionNotesService:
 
     def list_notes(self, *args: Any, **kwargs: Any) -> Any:
         return self._inner.list_notes(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
 
     def create_note(self, *args: Any, **kwargs: Any) -> Any:
         row = self._inner.create_note(*args, **kwargs)
@@ -324,12 +331,15 @@ class KikiVoiceAssistant(BaseKikiVoiceAssistant):
                 pairs.append((role, text))
 
         with psycopg.connect(self._database_url, row_factory=dict_row) as conn:
-            calendar_service = CalendarService(conn, PostgresCalendarRepository(conn))
+            friends_repo = PostgresFriendsRepository(conn)
+            notifications = NotificationsService(conn, PostgresNotificationsRepository(conn), friends_repo)
+            calendar_service = CalendarService(conn, PostgresCalendarRepository(conn), friends_repo, notifications)
             notes_service = _VoiceSessionNotesService(
-                NotesService(conn, PostgresNotesRepository(conn)),
+                NotesService(conn, PostgresNotesRepository(conn), friends_repo, notifications),
                 self,
             )
             contacts_service = ContactsService(conn, PostgresContactsRepository(conn))
+            friends_service = FriendsService(conn, friends_repo, notifications)
             agents_service = AgentsService(conn, PostgresAgentsRepository(conn))
             reply = generate_reply_with_tools(
                 pairs,
@@ -339,6 +349,7 @@ class KikiVoiceAssistant(BaseKikiVoiceAssistant):
                 notes_service=notes_service,
                 contacts_service=contacts_service,
                 agents_service=agents_service,
+                friends_service=friends_service,
                 additional_system_context=self.voice_session_context(),
                 latest_input_image_data_url=self.latest_camera_image_data_url(),
             )

@@ -22,6 +22,7 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
+  nickname: string;
   role: 'admin' | 'user' | string;
   is_active: boolean;
 }
@@ -195,6 +196,51 @@ export async function authorizedFetch(path: string, init: RequestInit = {}): Pro
   }
 
   return response;
+}
+
+export interface RegisterInput {
+  name: string;
+  email: string;
+  password: string;
+  nickname?: string;
+}
+
+export async function register(input: RegisterInput): Promise<AuthUser> {
+  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: input.name,
+      email: input.email,
+      password: input.password,
+      nickname: input.nickname?.trim() || undefined,
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(parseFastApiDetail(body, 'Não foi possível criar a conta.'));
+  }
+  return response.json();
+}
+
+export interface UpdateProfileInput {
+  name?: string;
+  nickname?: string;
+}
+
+export async function updateProfile(input: UpdateProfileInput): Promise<AuthUser> {
+  const response = await authorizedFetch('/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      name: input.name,
+      nickname: input.nickname,
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(parseFastApiDetail(body, 'Não foi possível atualizar o perfil.'));
+  }
+  return response.json();
 }
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {

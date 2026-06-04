@@ -11,6 +11,8 @@ from application.agents_service import AgentsService
 from application.auth_service import AuthService
 from application.calendar_service import CalendarService
 from application.contacts_service import ContactsService
+from application.friends_service import FriendsService
+from application.notifications_service import NotificationsService
 from application.notes_service import NotesService
 from application.push_service import PushService
 from application.settings_service import SettingsService
@@ -19,7 +21,9 @@ from infrastructure.config import Settings, load_settings
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
 from infrastructure.persistence.postgres_agents_repository import PostgresAgentsRepository
 from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
+from infrastructure.persistence.postgres_friends_repository import PostgresFriendsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
+from infrastructure.persistence.postgres_notifications_repository import PostgresNotificationsRepository
 from infrastructure.persistence.postgres_push_repository import PostgresPushRepository
 from infrastructure.persistence.postgres_settings_repository import PostgresSettingsRepository
 from infrastructure.persistence.postgres_refresh_token_repository import PostgresRefreshTokenRepository
@@ -74,15 +78,56 @@ def get_admin_service(conn: DbConnDep) -> AdminService:
 
 
 def get_calendar_service(conn: DbConnDep) -> CalendarService:
-    return CalendarService(conn, PostgresCalendarRepository(conn))
+    notifications = NotificationsService(
+        conn,
+        PostgresNotificationsRepository(conn),
+        PostgresFriendsRepository(conn),
+        PushService(conn, settings, PostgresPushRepository(conn)),
+    )
+    return CalendarService(
+        conn,
+        PostgresCalendarRepository(conn),
+        PostgresFriendsRepository(conn),
+        notifications,
+    )
 
 
 def get_notes_service(conn: DbConnDep) -> NotesService:
-    return NotesService(conn, PostgresNotesRepository(conn))
+    notifications = NotificationsService(
+        conn,
+        PostgresNotificationsRepository(conn),
+        PostgresFriendsRepository(conn),
+        PushService(conn, settings, PostgresPushRepository(conn)),
+    )
+    return NotesService(
+        conn,
+        PostgresNotesRepository(conn),
+        PostgresFriendsRepository(conn),
+        notifications,
+    )
 
 
 def get_contacts_service(conn: DbConnDep) -> ContactsService:
     return ContactsService(conn, PostgresContactsRepository(conn))
+
+
+def get_notifications_service(conn: DbConnDep) -> NotificationsService:
+    return NotificationsService(
+        conn,
+        PostgresNotificationsRepository(conn),
+        PostgresFriendsRepository(conn),
+        PushService(conn, settings, PostgresPushRepository(conn)),
+    )
+
+
+def get_friends_service(conn: DbConnDep) -> FriendsService:
+    notifications = NotificationsService(
+        conn,
+        PostgresNotificationsRepository(conn),
+        PostgresFriendsRepository(conn),
+        PushService(conn, settings, PostgresPushRepository(conn)),
+    )
+    return FriendsService(conn, PostgresFriendsRepository(conn), notifications)
 
 
 def get_agents_service(conn: DbConnDep) -> AgentsService:

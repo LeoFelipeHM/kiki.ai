@@ -1,28 +1,29 @@
-import { BookUser, Mail, Menu, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { CalendarDays, ChevronDown, ChevronUp, Menu, Plus, Search, UserPlus, Users, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppNotificationsBell } from './HomeNotificationsBell';
 import { useTheme } from './ThemeProvider';
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { AuthSessionExpiredError } from '@/services/auth';
 import {
-  createContact,
-  deleteContact,
-  fetchContacts,
-  patchContact,
-  type Contact,
-} from '@/services/contacts';
+  fetchFriendRequests,
+  fetchFriends,
+  requestFriendship,
+  respondFriendRequest,
+  searchFriendUsers,
+  updateFriendPermissions,
+  type Friend,
+  type FriendRequest,
+  type FriendUser,
+} from '@/services/friends';
 
 interface ContactsScreenProps {
   onOpenMenu?: () => void;
-  onNavigateToProfile?: () => void;
+  onNavigateToNotifications?: () => void;
   onNavigateToHome?: () => void;
   onSessionExpired?: () => void;
   userName?: string;
@@ -30,124 +31,124 @@ interface ContactsScreenProps {
 
 export function ContactsScreen({
   onOpenMenu,
-  onNavigateToProfile,
+  onNavigateToNotifications,
   onNavigateToHome,
   onSessionExpired,
   userName = 'Maria Silva',
 }: ContactsScreenProps) {
   const { themeColor } = useTheme();
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [friendResults, setFriendResults] = useState<FriendUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [friendSearch, setFriendSearch] = useState('');
+  const [pendingExpanded, setPendingExpanded] = useState(true);
+  const [addFriendOpen, setAddFriendOpen] = useState(false);
+  const addFriendSearchRef = useRef<HTMLInputElement>(null);
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formName, setFormName] = useState('');
-  const [formEmail, setFormEmail] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
+  const pendingRequests = friendRequests.filter((r) => r.status === 'pending');
 
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const loadFriends = useCallback(async () => {
+    setActionError(null);
+    try {
+      const [friendsList, requestsList] = await Promise.all([fetchFriends(), fetchFriendRequests()]);
+      setFriends(friendsList);
+      setFriendRequests(requestsList);
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setActionError(e instanceof Error ? e.message : 'Erro ao carregar amigos.');
+    }
+  }, [onSessionExpired]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       setIsLoading(true);
-      setLoadError(null);
-      try {
-        const list = await fetchContacts();
-        if (!cancelled) setContacts(list);
-      } catch (e) {
-        if (e instanceof AuthSessionExpiredError) {
-          onSessionExpired?.();
-          return;
-        }
-        if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Erro ao carregar contatos.');
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
+      await loadFriends();
+      if (!cancelled) setIsLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [onSessionExpired]);
+  }, [loadFriends]);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpenId(null);
-      }
-    };
-    if (menuOpenId !== null) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [menuOpenId]);
+    if (pendingRequests.length > 0) setPendingExpanded(true);
+  }, [pendingRequests.length]);
 
-  const openCreate = () => {
-    setEditingId(null);
-    setFormName('');
-    setFormEmail('');
-    setActionError(null);
-    setDialogOpen(true);
-  };
-
-  const openEdit = (c: Contact) => {
-    setEditingId(c.id);
-    setFormName(c.name);
-    setFormEmail(c.email);
-    setActionError(null);
-    setMenuOpenId(null);
-    setDialogOpen(true);
-  };
-
-  const handleSave = async () => {
-    const name = formName.trim();
-    const email = formEmail.trim();
-    if (!name || !email) {
-      setActionError('Preencha nome e e-mail.');
+  useEffect(() => {
+    if (!addFriendOpen) return;
+    const query = friendSearch.trim();
+    if (query.replace(/^@/, '').length < 3) {
+      setFriendResults([]);
       return;
     }
-    setIsSaving(true);
+    const id = window.setTimeout(() => {
+      void (async () => {
+        try {
+          setFriendResults(await searchFriendUsers(query));
+        } catch (e) {
+          if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
+          else setActionError(e instanceof Error ? e.message : 'Erro ao buscar usuários.');
+        }
+      })();
+    }, 300);
+    return () => window.clearTimeout(id);
+  }, [addFriendOpen, friendSearch, onSessionExpired]);
+
+  const openAddFriend = () => {
+    setActionError(null);
+    setFriendSearch('');
+    setFriendResults([]);
+    setAddFriendOpen(true);
+    window.setTimeout(() => addFriendSearchRef.current?.focus(), 100);
+  };
+
+  const handleRequestFriend = async (userId: string) => {
     setActionError(null);
     try {
-      if (editingId) {
-        const updated = await patchContact(editingId, { name, email });
-        setContacts((prev) => prev.map((x) => (x.id === editingId ? updated : x)));
-      } else {
-        const created = await createContact(name, email);
-        setContacts((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
-      }
-      setDialogOpen(false);
+      await requestFriendship(userId);
+      setFriendResults((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, friendshipStatus: 'pending' } : u)),
+      );
+      await loadFriends();
     } catch (e) {
-      if (e instanceof AuthSessionExpiredError) {
-        onSessionExpired?.();
-        return;
-      }
-      setActionError(e instanceof Error ? e.message : 'Não foi possível salvar.');
-    } finally {
-      setIsSaving(false);
+      if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
+      else setActionError(e instanceof Error ? e.message : 'Não foi possível enviar pedido.');
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Excluir este contato?')) return;
+  const handleFriendRequestAction = async (friendshipId: string, action: 'accept' | 'decline') => {
     setActionError(null);
-    setMenuOpenId(null);
     try {
-      await deleteContact(id);
-      setContacts((prev) => prev.filter((c) => c.id !== id));
-      if (editingId === id) {
-        setDialogOpen(false);
-        setEditingId(null);
-      }
+      await respondFriendRequest(friendshipId, action);
+      await loadFriends();
     } catch (e) {
-      if (e instanceof AuthSessionExpiredError) {
-        onSessionExpired?.();
-        return;
-      }
-      setActionError(e instanceof Error ? e.message : 'Não foi possível excluir.');
+      if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
+      else setActionError(e instanceof Error ? e.message : 'Não foi possível responder ao pedido.');
+    }
+  };
+
+  const toggleDirectCalendar = async (friend: Friend) => {
+    setActionError(null);
+    try {
+      await updateFriendPermissions(friend.id, {
+        canCreateCalendarEventsDirect: !friend.canCreateCalendarEventsDirect,
+      });
+      setFriends((prev) =>
+        prev.map((f) =>
+          f.id === friend.id
+            ? { ...f, canCreateCalendarEventsDirect: !f.canCreateCalendarEventsDirect }
+            : f,
+        ),
+      );
+    } catch (e) {
+      if (e instanceof AuthSessionExpiredError) onSessionExpired?.();
+      else setActionError(e instanceof Error ? e.message : 'Não foi possível atualizar permissões.');
     }
   };
 
@@ -177,193 +178,228 @@ export function ContactsScreen({
             >
               Kiki
             </button>
-            <button
-              type="button"
-              onClick={onNavigateToProfile}
-              className={`w-10 h-10 rounded-full bg-gradient-to-br ${themeColor} flex items-center justify-center text-sm btn-apple-gradient shadow-sm`}
-            >
-              <span className="text-white font-medium">{userName.charAt(0).toUpperCase()}</span>
-            </button>
+            <AppNotificationsBell onNavigateToAll={onNavigateToNotifications} />
           </div>
 
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-2xl font-bold">Contatos</h2>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h2 className="text-2xl font-bold">Amigos</h2>
             <button
               type="button"
-              onClick={openCreate}
-              className={`w-11 h-11 rounded-full bg-gradient-to-br ${themeColor} text-white flex items-center justify-center btn-apple-gradient shadow-lg hover:shadow-xl transition-all`}
+              onClick={openAddFriend}
+              aria-label="Adicionar amigo"
+              className={`w-11 h-11 rounded-full bg-gradient-to-br ${themeColor} text-white flex items-center justify-center btn-apple-gradient shadow-lg hover:shadow-xl transition-all shrink-0`}
             >
               <Plus className="w-5 h-5" />
             </button>
           </div>
-          <p className="text-sm text-muted-foreground mb-3">Nome e e-mail salvos só na sua conta.</p>
-          {loadError ? (
+          {actionError ? (
             <p className="text-sm text-red-500" role="alert">
-              {loadError}
-            </p>
-          ) : null}
-          {actionError && !dialogOpen ? (
-            <p className="text-sm text-red-500 mt-2" role="alert">
               {actionError}
             </p>
           ) : null}
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
-              <div
-                className={`w-10 h-10 border-2 border-muted-foreground/30 border-t-purple-500 rounded-full animate-spin`}
-              />
-              <span className="text-sm">Carregando contatos…</span>
-            </div>
-          ) : contacts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center px-8">
-              <div
-                className={`w-20 h-20 rounded-full bg-gradient-to-br ${themeColor} opacity-20 flex items-center justify-center mb-4`}
-              >
-                <BookUser className="w-10 h-10 text-white" />
-              </div>
-              <h3 className="text-lg font-medium mb-2">Nenhum contato ainda</h3>
-              <p className="text-sm text-muted-foreground mb-6">
-                Adicione pessoas para consultar nome e e-mail quando precisar.
-              </p>
+          <div className="py-4 px-5 space-y-5">
+            {/* Pedidos pendentes — compacto */}
+            <section className="rounded-xl border border-border bg-card overflow-hidden">
               <button
                 type="button"
-                onClick={openCreate}
-                className={`flex items-center gap-2 px-6 py-3 bg-gradient-to-br ${themeColor} text-white rounded-full btn-apple-gradient shadow-lg hover:shadow-xl transition-all`}
+                onClick={() => setPendingExpanded((v) => !v)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/40 transition-colors btn-apple"
               >
-                <Plus className="w-5 h-5" />
-                <span className="font-medium">Novo contato</span>
-              </button>
-            </div>
-          ) : (
-            <div className="py-4 px-5 space-y-2">
-              {contacts.map((c) => (
-                <div key={c.id} className="relative">
-                  <button
-                    type="button"
-                    onClick={() => openEdit(c)}
-                    className="w-full bg-card border border-border rounded-2xl p-4 text-left hover:shadow-md transition-all btn-apple flex items-start gap-3"
+                <div
+                  className={`w-7 h-7 rounded-lg bg-gradient-to-br ${themeColor} flex items-center justify-center shrink-0`}
+                >
+                  <UserPlus className="w-3.5 h-3.5 text-white" />
+                </div>
+                <p className="flex-1 min-w-0 text-xs font-medium truncate">Pedidos pendentes</p>
+                {pendingRequests.length > 0 ? (
+                  <span
+                    className={`min-w-[18px] h-[18px] px-1 rounded-full bg-gradient-to-br ${themeColor} text-[10px] font-semibold text-white flex items-center justify-center`}
                   >
-                    <div
-                      className={`w-11 h-11 rounded-full bg-gradient-to-br ${themeColor} flex items-center justify-center text-white text-sm font-semibold shrink-0`}
-                    >
-                      {initials(c.name)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-base truncate">{c.name}</p>
-                      <p className="text-sm text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
-                        <Mail className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">{c.email}</span>
-                      </p>
-                    </div>
-                    <div
-                      className="relative shrink-0"
-                      ref={menuOpenId === c.id ? menuRef : undefined}
-                    >
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setMenuOpenId(menuOpenId === c.id ? null : c.id);
-                        }}
-                        className="w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center btn-apple"
+                    {pendingRequests.length}
+                  </span>
+                ) : null}
+                {pendingExpanded ? (
+                  <ChevronUp className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                )}
+              </button>
+
+              {pendingExpanded ? (
+                <div className="px-3 pb-2.5 space-y-1.5 border-t border-border pt-2">
+                  {isLoading ? (
+                    <p className="text-xs text-muted-foreground py-1">Carregando…</p>
+                  ) : pendingRequests.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-1">Nenhum pedido no momento.</p>
+                  ) : (
+                    pendingRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        className="rounded-lg border border-purple-200/50 bg-purple-50/30 dark:bg-purple-950/15 dark:border-purple-900/30 px-2.5 py-2"
                       >
-                        <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                      </button>
-                      {menuOpenId === c.id ? (
-                        <div className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-xl border border-border bg-popover shadow-lg py-1 text-sm">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div
+                            className={`w-8 h-8 rounded-full bg-gradient-to-br ${themeColor} text-white flex items-center justify-center text-[10px] font-semibold shrink-0`}
+                          >
+                            {initials(req.requesterName ?? 'Usuário')}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-xs truncate">
+                              {req.requesterName ?? 'Usuário'}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground truncate">
+                              @{req.requesterNickname ?? 'usuario'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5">
                           <button
                             type="button"
-                            className="w-full px-3 py-2 text-left hover:bg-muted flex items-center gap-2"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEdit(c);
-                            }}
+                            onClick={() => void handleFriendRequestAction(req.id, 'accept')}
+                            className={`flex-1 px-2 py-1 rounded-lg text-[10px] font-medium text-white bg-gradient-to-br ${themeColor}`}
                           >
-                            <Pencil className="w-3.5 h-3.5" />
-                            Editar
+                            Aceitar
                           </button>
                           <button
                             type="button"
-                            className="w-full px-3 py-2 text-left hover:bg-muted text-destructive flex items-center gap-2"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleDelete(c.id);
-                            }}
+                            onClick={() => void handleFriendRequestAction(req.id, 'decline')}
+                            className="flex-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-muted hover:bg-muted/80"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Excluir
+                            Recusar
                           </button>
                         </div>
-                      ) : null}
-                    </div>
-                  </button>
+                      </div>
+                    ))
+                  )}
                 </div>
-              ))}
+              ) : null}
+            </section>
+
+            {/* Lista de amigos */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Meus amigos
+              </h3>
+              {isLoading ? (
+                <p className="text-sm text-muted-foreground">Carregando amigos…</p>
+              ) : friends.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <Users className="w-10 h-10 mx-auto mb-3 opacity-60" />
+                  <p className="text-sm">Toque em + para adicionar um amigo pelo nickname.</p>
+                </div>
+              ) : (
+                friends.map((friend) => (
+                  <div
+                    key={friend.id}
+                    className="bg-card border border-border rounded-2xl p-4 flex items-start gap-3"
+                  >
+                    <div
+                      className={`w-11 h-11 rounded-full bg-gradient-to-br ${themeColor} text-white flex items-center justify-center text-sm font-semibold`}
+                    >
+                      {initials(friend.name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold truncate">{friend.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        @{friend.nickname} • {friend.email}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void toggleDirectCalendar(friend)}
+                        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted hover:bg-muted/80 text-xs"
+                      >
+                        <CalendarDays className="w-3.5 h-3.5" />
+                        {friend.canCreateCalendarEventsDirect
+                          ? 'Pode criar direto'
+                          : 'Eventos por aprovação'}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
       <Dialog
-        open={dialogOpen}
+        open={addFriendOpen}
         onOpenChange={(open) => {
-          setDialogOpen(open);
+          setAddFriendOpen(open);
           if (!open) {
-            setEditingId(null);
-            setActionError(null);
+            setFriendSearch('');
+            setFriendResults([]);
           }
         }}
       >
-        <DialogContent className="rounded-2xl max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editingId ? 'Editar contato' : 'Novo contato'}</DialogTitle>
+        <DialogContent className="rounded-2xl max-w-md max-h-[85vh] flex flex-col">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>Adicionar amigo</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label htmlFor="contact-name">Nome</Label>
-              <Input
-                id="contact-name"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                placeholder="Nome completo"
-                autoComplete="name"
-                className="rounded-xl"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="contact-email">E-mail</Label>
-              <Input
-                id="contact-email"
-                type="email"
-                value={formEmail}
-                onChange={(e) => setFormEmail(e.target.value)}
-                placeholder="email@exemplo.com"
-                autoComplete="email"
-                className="rounded-xl"
-              />
-            </div>
-            {actionError ? (
-              <p className="text-sm text-red-500" role="alert">
-                {actionError}
-              </p>
-            ) : null}
+          <div className="relative shrink-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              ref={addFriendSearchRef}
+              type="text"
+              value={friendSearch}
+              onChange={(e) => setFriendSearch(e.target.value)}
+              placeholder="Nickname (mín. 3 caracteres)"
+              className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl bg-muted border border-border focus:border-purple-500 focus:outline-none input-apple"
+            />
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              className={`bg-gradient-to-br ${themeColor} text-white border-0 hover:opacity-90`}
-              onClick={() => void handleSave()}
-              disabled={isSaving}
-            >
-              {isSaving ? 'Salvando…' : 'Salvar'}
-            </Button>
-          </DialogFooter>
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-2 mt-3">
+            {friendSearch.trim().replace(/^@/, '').length > 0 &&
+            friendSearch.trim().replace(/^@/, '').length < 3 ? (
+              <p className="text-xs text-muted-foreground px-1">Digite pelo menos 3 caracteres.</p>
+            ) : null}
+            {friendResults.length === 0 &&
+            friendSearch.trim().replace(/^@/, '').length >= 3 ? (
+              <p className="text-xs text-muted-foreground px-1 py-4 text-center">Nenhum usuário encontrado.</p>
+            ) : null}
+            {friendResults.map((user) => (
+              <div
+                key={user.id}
+                className="bg-card border border-border rounded-xl p-3 flex items-center gap-3"
+              >
+                <div
+                  className={`w-9 h-9 rounded-full bg-gradient-to-br ${themeColor} text-white flex items-center justify-center text-xs font-semibold`}
+                >
+                  {initials(user.name)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{user.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">@{user.nickname}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={Boolean(user.friendshipStatus)}
+                  onClick={() => void handleRequestFriend(user.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium btn-apple ${
+                    user.friendshipStatus
+                      ? 'bg-muted text-muted-foreground'
+                      : `bg-gradient-to-br ${themeColor} text-white`
+                  }`}
+                >
+                  {user.friendshipStatus === 'accepted'
+                    ? 'Amigo'
+                    : user.friendshipStatus === 'pending'
+                      ? 'Pendente'
+                      : 'Adicionar'}
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setAddFriendOpen(false)}
+            className="mt-2 w-full py-2.5 rounded-xl text-sm font-medium bg-muted hover:bg-muted/80 btn-apple flex items-center justify-center gap-2 shrink-0"
+          >
+            <X className="w-4 h-4" />
+            Fechar
+          </button>
         </DialogContent>
       </Dialog>
     </>

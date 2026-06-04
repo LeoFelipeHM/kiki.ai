@@ -12,12 +12,16 @@ from psycopg.rows import dict_row
 from application.calendar_service import CalendarService
 from application.contacts_service import ContactsService
 from application.agents_service import AgentsService
+from application.friends_service import FriendsService
 from application.notes_service import NotesService
+from application.notifications_service import NotificationsService
 from infrastructure.persistence.postgres_agents_repository import PostgresAgentsRepository
 from infrastructure.persistence.postgres_calendar_repository import PostgresCalendarRepository
 from infrastructure.persistence.postgres_chat_repository import PostgresChatRepository
 from infrastructure.persistence.postgres_contacts_repository import PostgresContactsRepository
+from infrastructure.persistence.postgres_friends_repository import PostgresFriendsRepository
 from infrastructure.persistence.postgres_notes_repository import PostgresNotesRepository
+from infrastructure.persistence.postgres_notifications_repository import PostgresNotificationsRepository
 from infrastructure.persistence.postgres_usage_repository import PostgresUsageRepository
 from llm.openai_chat_client import (
     OpenAIChatCompletionError,
@@ -32,6 +36,7 @@ from presentation.api.dependencies import (
     get_calendar_service,
     get_agents_service,
     get_contacts_service,
+    get_friends_service,
     get_notes_service,
     settings,
 )
@@ -89,6 +94,7 @@ CalendarServiceDep = Annotated[CalendarService, Depends(get_calendar_service)]
 NotesServiceDep = Annotated[NotesService, Depends(get_notes_service)]
 ContactsServiceDep = Annotated[ContactsService, Depends(get_contacts_service)]
 AgentsServiceDep = Annotated[AgentsService, Depends(get_agents_service)]
+FriendsServiceDep = Annotated[FriendsService, Depends(get_friends_service)]
 
 # Enquanto o agente (tools + LLM) trabalha sem emitir deltas, proxies costumam cortar a conexão (~60s).
 _SSE_KEEPALIVE = float(os.getenv("SSE_KEEPALIVE_SECONDS", "12").strip() or "12")
@@ -167,6 +173,16 @@ def _save_successful_turn(
     return conversation_id, title, summary
 
 
+def _build_social_tool_services(conn: psycopg.Connection[Any]) -> tuple[CalendarService, NotesService, FriendsService]:
+    friends_repo = PostgresFriendsRepository(conn)
+    notifications = NotificationsService(conn, PostgresNotificationsRepository(conn), friends_repo)
+    return (
+        CalendarService(conn, PostgresCalendarRepository(conn), friends_repo, notifications),
+        NotesService(conn, PostgresNotesRepository(conn), friends_repo, notifications),
+        FriendsService(conn, friends_repo, notifications),
+    )
+
+
 @router.get("/conversations", response_model=list[ChatConversationResponse])
 def list_chat_conversations(
     current_user: CurrentUserDep,
@@ -208,6 +224,7 @@ def chat_completion_stream(
         )
 
     incoming_pairs = [(m.role, m.content) for m in payload.messages]
+    chat_request = payload
 
     def sse():
         # Primeiro byte rápido: reduz timeout de “primeira resposta” em proxies e mantém o socket vivo.
@@ -220,15 +237,14 @@ def chat_completion_stream(
             try:
                 worker_conn[0] = psycopg.connect(settings.database_url, row_factory=dict_row)
                 conn = worker_conn[0]
-                calendar_service = CalendarService(conn, PostgresCalendarRepository(conn))
-                notes_service = NotesService(conn, PostgresNotesRepository(conn))
+                calendar_service, notes_service, friends_service = _build_social_tool_services(conn)
                 contacts_service = ContactsService(conn, PostgresContactsRepository(conn))
                 agents_service = AgentsService(conn, PostgresAgentsRepository(conn))
                 chat_repo = PostgresChatRepository(conn)
                 conversation_id, title, _summary, pairs = _conversation_payload(
                     chat_repo,
                     str(current_user["id"]),
-                    payload.conversation_id,
+                    chat_request.conversation_id,
                     incoming_pairs,
                 )
 
@@ -237,10 +253,12 @@ def chat_completion_stream(
                     pairs,
                     current_user_id=str(current_user["id"]),
                     current_user_timezone=str(current_user.get("timezone") or ""),
+                    current_user_name=str(current_user.get("name") or ""),
                     calendar_service=calendar_service,
                     notes_service=notes_service,
                     contacts_service=contacts_service,
                     agents_service=agents_service,
+                    friends_service=friends_service,
                 )
                 for delta in stream:
                     reply_parts.append(delta)
@@ -296,7 +314,7 @@ def chat_completion_stream(
         try:
             while True:
                 try:
-                    kind, payload = result_queue.get(timeout=_SSE_KEEPALIVE)
+                    kind, item = result_queue.get(timeout=_SSE_KEEPALIVE)
                 except queue.Empty:
                     # Comentário SSE: mantém conexão ativa durante execução longa do agente (tools + modelo).
                     yield ": ping\n\n"
@@ -306,19 +324,19 @@ def chat_completion_stream(
                     continue
 
                 if kind == "delta":
-                    yield f"data: {json.dumps({'delta': payload}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'delta': item}, ensure_ascii=False)}\n\n"
                 elif kind == "meta":
-                    yield f"data: {json.dumps({'meta': payload}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'meta': item}, ensure_ascii=False)}\n\n"
                 elif kind == "finished":
                     break
                 elif kind == "config_err":
-                    yield f"data: {json.dumps({'error': str(payload)}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'error': str(item)}, ensure_ascii=False)}\n\n"
                     return
                 elif kind == "chat_err":
-                    yield f"data: {json.dumps({'error': str(payload)}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'error': str(item)}, ensure_ascii=False)}\n\n"
                     return
                 elif kind == "fatal":
-                    yield f"data: {json.dumps({'error': str(payload)}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'error': str(item)}, ensure_ascii=False)}\n\n"
                     return
         finally:
             thread.join(timeout=600.0)
@@ -345,6 +363,7 @@ def chat_completion(
     notes_service: NotesServiceDep,
     contacts_service: ContactsServiceDep,
     agents_service: AgentsServiceDep,
+    friends_service: FriendsServiceDep,
 ):
     if not os.getenv("OPENAI_API_KEY", "").strip():
         raise HTTPException(
@@ -368,10 +387,12 @@ def chat_completion(
             pairs,
             current_user_id=str(current_user["id"]),
             current_user_timezone=str(current_user.get("timezone") or ""),
+            current_user_name=str(current_user.get("name") or ""),
             calendar_service=calendar_service,
             notes_service=notes_service,
             contacts_service=contacts_service,
             agents_service=agents_service,
+            friends_service=friends_service,
         )
     except OpenAIChatConfigurationError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc

@@ -140,16 +140,73 @@ def _find_conflicts(
     )
 
 
+def _normalize_lookup(value: str) -> str:
+    return " ".join(value.strip().lower().lstrip("@").split())
+
+
+def _resolve_friend_user_id(friends_service: Any, current_user_id: str, friend_user_id: str, friend_name: str) -> tuple[str | None, str | None]:
+    if friend_user_id:
+        return friend_user_id, None
+    if friends_service is None:
+        return None, "Serviço de amigos indisponível nesta sessão."
+    needle = _normalize_lookup(friend_name)
+    if not needle:
+        return None, "Informe qual amigo devo usar."
+    rows = friends_service.list_friends(current_user_id)
+    matches = []
+    for row in rows:
+        candidates = [
+            str(row.get("friend_name") or ""),
+            str(row.get("friend_nickname") or ""),
+            str(row.get("friend_email") or ""),
+        ]
+        normalized = [_normalize_lookup(c) for c in candidates]
+        if any(needle == c or needle in c or c in needle for c in normalized if c):
+            matches.append(row)
+    if len(matches) == 1:
+        return str(matches[0]["friend_user_id"]), None
+    if not matches:
+        available = ", ".join(str(row.get("friend_name") or row.get("friend_nickname") or "") for row in rows[:5])
+        suffix = f" Amigos disponíveis: {available}." if available else ""
+        return None, f"Não encontrei esse amigo.{suffix}"
+    available = ", ".join(str(row.get("friend_name") or row.get("friend_nickname") or "") for row in matches[:5])
+    return None, f"Encontrei mais de um amigo possível: {available}. Qual deles?"
+
+
+def _resolve_note_id(notes_service: Any, current_user_id: str, note_id: str, note_title: str) -> tuple[str | None, str | None]:
+    if note_id:
+        return note_id, None
+    needle = _normalize_lookup(note_title)
+    if not needle:
+        return None, "Informe qual nota devo compartilhar."
+    rows = notes_service.list_notes(current_user_id, note_title)
+    matches = []
+    for row in rows:
+        title = _normalize_lookup(str(row.get("title") or ""))
+        if needle == title or needle in title or title in needle:
+            matches.append(row)
+    if len(matches) == 1:
+        return str(matches[0]["id"]), None
+    if not matches:
+        available = ", ".join(str(row.get("title") or "(sem título)") for row in rows[:5])
+        suffix = f" Notas encontradas na busca: {available}." if available else ""
+        return None, f"Não encontrei essa nota.{suffix}"
+    available = ", ".join(str(row.get("title") or "(sem título)") for row in matches[:5])
+    return None, f"Encontrei mais de uma nota possível: {available}. Qual delas?"
+
+
 def execute_tool_call(
     name: ToolName,
     arguments: dict[str, Any],
     *,
     current_user_id: str,
     current_user_timezone: str | None,
+    current_user_name: str | None = None,
     calendar_service: Any,
     notes_service: Any,
     contacts_service: Any = None,
     agents_service: Any = None,
+    friends_service: Any = None,
 ) -> dict[str, Any]:
     """Executa uma tool e retorna um payload JSON serializável para devolver ao modelo."""
     try:
@@ -164,6 +221,12 @@ def execute_tool_call(
                 rf = _parse_iso_dt(from_iso, current_user_timezone) if from_iso else None
                 rt = _parse_iso_dt(to_iso, current_user_timezone) if to_iso else None
             rows = calendar_service.list_events(current_user_id, rf, rt)
+            return _tool_ok(rows)
+
+        if name == "friends_list_friends":
+            if friends_service is None:
+                return _tool_error("Serviço de amigos indisponível nesta sessão.")
+            rows = friends_service.list_friends(current_user_id)
             return _tool_ok(rows)
 
         if name == "calendar_create_event":
@@ -274,6 +337,78 @@ def execute_tool_call(
                 guests=guests,
             )
             return _tool_ok(row)
+
+        if name == "calendar_list_friend_events":
+            friend_user_id_raw = str(arguments.get("friend_user_id") or "").strip()
+            friend_name = str(arguments.get("friend_name") or "").strip()
+            friend_user_id, error = _resolve_friend_user_id(
+                friends_service,
+                current_user_id,
+                friend_user_id_raw,
+                friend_name,
+            )
+            if error:
+                return _tool_error(error)
+            assert friend_user_id is not None
+            from_iso = cast(str | None, arguments.get("from_iso"))
+            to_iso = cast(str | None, arguments.get("to_iso"))
+            if not from_iso and not to_iso:
+                rf, rt = _current_week_range_local()
+            else:
+                rf = _parse_iso_dt(from_iso, current_user_timezone) if from_iso else None
+                rt = _parse_iso_dt(to_iso, current_user_timezone) if to_iso else None
+            try:
+                rows = calendar_service.list_friend_events(current_user_id, friend_user_id, rf, rt)
+            except PermissionError as exc:
+                return _tool_error(str(exc))
+            return _tool_ok(rows)
+
+        if name == "calendar_create_friend_event":
+            friend_user_id_raw = str(arguments.get("friend_user_id") or "").strip()
+            friend_name = str(arguments.get("friend_name") or "").strip()
+            friend_user_id, error = _resolve_friend_user_id(
+                friends_service,
+                current_user_id,
+                friend_user_id_raw,
+                friend_name,
+            )
+            if error:
+                return _tool_error(error)
+            assert friend_user_id is not None
+            title = str(arguments.get("title") or "").strip()
+            if not title:
+                return _tool_error("Título do evento é obrigatório.")
+            starts_at = _parse_iso_dt(str(arguments.get("starts_at")), current_user_timezone)
+            ends_at = _parse_iso_dt(str(arguments.get("ends_at")), current_user_timezone)
+            event_type = str(arguments.get("event_type") or "personal")
+            color = cast(str | None, arguments.get("color"))
+            description = cast(str | None, arguments.get("description"))
+            status = str(arguments.get("status") or "confirmed")
+            guests_in = cast(list[dict[str, Any]] | None, arguments.get("guests")) or []
+            guests: list[tuple[str, str | None]] = []
+            for g in guests_in:
+                nm = str(g.get("name") or "").strip()
+                if not nm:
+                    continue
+                em = cast(str | None, g.get("email"))
+                guests.append((nm, (em.strip() if isinstance(em, str) and em.strip() else None)))
+            try:
+                result = calendar_service.create_friend_event_or_request(
+                    current_user_id,
+                    friend_user_id,
+                    current_user_name or "Um usuário",
+                    title=title,
+                    starts_at=starts_at,
+                    ends_at=ends_at,
+                    event_type=event_type,
+                    color=(color.strip() if isinstance(color, str) and color.strip() else None),
+                    description=(description.strip() if isinstance(description, str) and description.strip() else None),
+                    status=status,
+                    guests=guests,
+                )
+            except PermissionError as exc:
+                return _tool_error(str(exc))
+            return _tool_ok(result)
 
         if name == "calendar_update_event":
             event_id = str(arguments.get("event_id") or "").strip()
@@ -425,6 +560,40 @@ def execute_tool_call(
             if not ok:
                 return _tool_error("Nota não encontrada.")
             return _tool_ok({"deleted": True})
+
+        if name == "notes_share_note":
+            friend_user_id_raw = str(arguments.get("friend_user_id") or "").strip()
+            friend_name = str(arguments.get("friend_name") or "").strip()
+            friend_user_id, friend_error = _resolve_friend_user_id(
+                friends_service,
+                current_user_id,
+                friend_user_id_raw,
+                friend_name,
+            )
+            if friend_error:
+                return _tool_error(friend_error)
+            note_id_raw = str(arguments.get("note_id") or "").strip()
+            note_title = str(arguments.get("note_title") or "").strip()
+            note_id, note_error = _resolve_note_id(notes_service, current_user_id, note_id_raw, note_title)
+            if note_error:
+                return _tool_error(note_error)
+            role = str(arguments.get("role") or "editor")
+            if role not in ("editor", "viewer"):
+                role = "editor"
+            assert friend_user_id is not None and note_id is not None
+            try:
+                row = notes_service.share_note(
+                    current_user_id,
+                    note_id=note_id,
+                    target_user_id=friend_user_id,
+                    role=role,
+                    actor_name=current_user_name or "Um usuário",
+                )
+            except ValueError as exc:
+                return _tool_error(str(exc))
+            if not row:
+                return _tool_error("Nota não encontrada ou você não é dono dela.")
+            return _tool_ok(row)
 
         if name in (
             "contacts_list_contacts",

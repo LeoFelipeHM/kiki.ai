@@ -43,16 +43,18 @@ def upsert_admin_user(conn: psycopg.Connection) -> None:
             INSERT INTO users (
                 name,
                 email,
+                nickname,
                 role,
                 password_hash,
                 is_active,
                 email_verified_at,
                 password_updated_at
             )
-            VALUES (%s, %s, 'admin', %s, TRUE, NOW(), NOW())
+            VALUES (%s, %s, %s, 'admin', %s, TRUE, NOW(), NOW())
             ON CONFLICT (email)
             DO UPDATE SET
                 name = EXCLUDED.name,
+                nickname = COALESCE(users.nickname, EXCLUDED.nickname),
                 role = 'admin',
                 password_hash = EXCLUDED.password_hash,
                 is_active = TRUE,
@@ -61,7 +63,7 @@ def upsert_admin_user(conn: psycopg.Connection) -> None:
                 updated_at = NOW()
             RETURNING id
             """,
-            ("Leo", admin_email, password_hash),
+            ("Leo", admin_email, "leo", password_hash),
         )
         admin = cur.fetchone()
         admin_id = admin[0] if admin else None

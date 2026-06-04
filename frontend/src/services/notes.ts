@@ -9,6 +9,8 @@ export interface Note {
   isPinned: boolean;
   tags: string[];
   isLocked: boolean;
+  permissionRole: 'owner' | 'editor' | 'viewer' | string;
+  isShared: boolean;
 }
 
 interface NoteApiRow {
@@ -19,6 +21,8 @@ interface NoteApiRow {
   is_pinned: boolean;
   is_locked: boolean;
   tags: string[];
+  permission_role?: string;
+  is_shared?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +37,8 @@ export function mapApiNote(row: NoteApiRow): Note {
     isPinned: row.is_pinned,
     tags: row.tags ?? [],
     isLocked: row.is_locked,
+    permissionRole: row.permission_role ?? 'owner',
+    isShared: row.is_shared ?? false,
   };
 }
 
@@ -48,7 +54,7 @@ export async function fetchNotes(search?: string): Promise<Note[]> {
     res = await authorizedFetch(`/notes${qs}`);
   } catch (e) {
     if (e instanceof AuthSessionExpiredError) throw e;
-    throw new Error('Não foi possível carregar as notas.');
+    throw new Error('Não foi possível carregar as notas.', { cause: e });
   }
   if (!res.ok) {
     throw new Error(await parseNotesError(res));
@@ -63,6 +69,7 @@ export interface CreateNotePayload {
   isPinned?: boolean;
   isLocked?: boolean;
   tags?: string[];
+  expectedUpdatedAt?: Date;
 }
 
 export async function createNote(payload: CreateNotePayload): Promise<Note> {
@@ -81,7 +88,7 @@ export async function createNote(payload: CreateNotePayload): Promise<Note> {
     });
   } catch (e) {
     if (e instanceof AuthSessionExpiredError) throw e;
-    throw new Error('Não foi possível criar a nota.');
+    throw new Error('Não foi possível criar a nota.', { cause: e });
   }
   if (!res.ok) throw new Error(await parseNotesError(res));
   const row: NoteApiRow = await res.json();
@@ -103,6 +110,7 @@ export async function patchNote(noteId: string, payload: PatchNotePayload): Prom
   if (payload.isPinned !== undefined) body.is_pinned = payload.isPinned;
   if (payload.isLocked !== undefined) body.is_locked = payload.isLocked;
   if (payload.tags !== undefined) body.tags = payload.tags;
+  if (payload.expectedUpdatedAt !== undefined) body.expected_updated_at = payload.expectedUpdatedAt.toISOString();
 
   let res: Response;
   try {
@@ -112,11 +120,84 @@ export async function patchNote(noteId: string, payload: PatchNotePayload): Prom
     });
   } catch (e) {
     if (e instanceof AuthSessionExpiredError) throw e;
-    throw new Error('Não foi possível atualizar a nota.');
+    throw new Error('Não foi possível atualizar a nota.', { cause: e });
   }
   if (!res.ok) throw new Error(await parseNotesError(res));
   const row: NoteApiRow = await res.json();
   return mapApiNote(row);
+}
+
+export interface NoteCollaborator {
+  id: string;
+  noteId: string;
+  userId: string;
+  role: 'owner' | 'editor' | 'viewer' | string;
+  acceptedAt: Date | null;
+  name: string;
+  email: string;
+  nickname: string;
+}
+
+interface NoteCollaboratorApi {
+  id: string;
+  note_id: string;
+  user_id: string;
+  role: string;
+  accepted_at: string | null;
+  name?: string | null;
+  email?: string | null;
+  nickname?: string | null;
+}
+
+function mapCollaborator(row: NoteCollaboratorApi): NoteCollaborator {
+  return {
+    id: row.id,
+    noteId: row.note_id,
+    userId: row.user_id,
+    role: row.role,
+    acceptedAt: row.accepted_at ? new Date(row.accepted_at) : null,
+    name: row.name ?? '',
+    email: row.email ?? '',
+    nickname: row.nickname ?? '',
+  };
+}
+
+export async function shareNote(
+  noteId: string,
+  userId: string,
+  role: 'editor' | 'viewer' = 'editor',
+): Promise<NoteCollaborator> {
+  const res = await authorizedFetch(`/notes/${noteId}/share`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId, role }),
+  });
+  if (!res.ok) throw new Error(await parseNotesError(res));
+  return mapCollaborator(await res.json());
+}
+
+export async function fetchNoteCollaborators(noteId: string): Promise<NoteCollaborator[]> {
+  const res = await authorizedFetch(`/notes/${noteId}/collaborators`);
+  if (!res.ok) throw new Error(await parseNotesError(res));
+  const rows: NoteCollaboratorApi[] = await res.json();
+  return rows.map(mapCollaborator);
+}
+
+export async function updateNoteCollaboratorRole(
+  noteId: string,
+  userId: string,
+  role: 'editor' | 'viewer',
+): Promise<NoteCollaborator> {
+  const res = await authorizedFetch(`/notes/${noteId}/collaborators/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role }),
+  });
+  if (!res.ok) throw new Error(await parseNotesError(res));
+  return mapCollaborator(await res.json());
+}
+
+export async function removeNoteCollaborator(noteId: string, userId: string): Promise<void> {
+  const res = await authorizedFetch(`/notes/${noteId}/collaborators/${userId}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 204) throw new Error(await parseNotesError(res));
 }
 
 export async function deleteNote(noteId: string): Promise<void> {
@@ -125,7 +206,7 @@ export async function deleteNote(noteId: string): Promise<void> {
     res = await authorizedFetch(`/notes/${noteId}`, { method: 'DELETE' });
   } catch (e) {
     if (e instanceof AuthSessionExpiredError) throw e;
-    throw new Error('Não foi possível excluir a nota.');
+    throw new Error('Não foi possível excluir a nota.', { cause: e });
   }
   if (!res.ok && res.status !== 204) {
     throw new Error(await parseNotesError(res));

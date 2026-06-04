@@ -5,6 +5,7 @@ import type { NotificationPreferencesDto } from '@/services/settings';
 export type ProfileDataState = {
   name: string;
   email: string;
+  nickname: string;
   phone: string;
   birthdate: string;
   language: string;

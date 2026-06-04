@@ -1,6 +1,5 @@
 import {
   Activity,
-  BookUser,
   Bot,
   Calendar,
   MessageCircle,
@@ -68,7 +67,7 @@ export function SideMenu({
     { id: 'agents', icon: Bot, label: 'Agentes', description: 'Assistentes autônomos' },
     { id: 'calendar', icon: Calendar, label: 'Calendário', description: 'Visualize sua agenda' },
     { id: 'notes', icon: FileText, label: 'Notas', description: 'Suas anotações' },
-    { id: 'contacts', icon: BookUser, label: 'Contatos', description: 'Nome e e-mail' },
+    { id: 'contacts', icon: Users, label: 'Amigos', description: 'Adicionar e gerenciar amigos' },
     ...(isAdmin
       ? [
           { id: 'admin-blog' as const, icon: Newspaper, label: 'Blog', description: 'Editar e publicar posts' },

@@ -11,6 +11,7 @@ from presentation.api.schemas.calendar import (
     CalendarEventPatch,
     CalendarEventResponse,
     CalendarGuestResponse,
+    FriendCalendarEventRequestResponse,
 )
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
@@ -22,6 +23,18 @@ def _event_to_response(row: dict) -> CalendarEventResponse:
     guests = [CalendarGuestResponse(**g) for g in row.get("guests", [])]
     payload = {**row, "guests": guests}
     return CalendarEventResponse(**payload)
+
+
+def _parse_iso_query(value: str | None):
+    if value is None:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Parâmetro de data inválido (use ISO 8601).",
+        ) from exc
 
 
 @router.get("/events", response_model=list[CalendarEventResponse])
@@ -37,20 +50,35 @@ def list_calendar_events(
         Query(alias="to", description="ISO 8601 fim do intervalo"),
     ] = None,
 ):
-    def parse_iso(value: str | None):
-        if value is None:
-            return None
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Parâmetro de data inválido (use ISO 8601).",
-            ) from exc
-
-    rf = parse_iso(range_from)
-    rt = parse_iso(range_to)
+    rf = _parse_iso_query(range_from)
+    rt = _parse_iso_query(range_to)
     rows = calendar_service.list_events(str(current_user["id"]), rf, rt)
+    return [_event_to_response(r) for r in rows]
+
+
+@router.get("/friends/{friend_user_id}/events", response_model=list[CalendarEventResponse])
+def list_friend_calendar_events(
+    friend_user_id: str,
+    current_user: CurrentUserDep,
+    calendar_service: CalendarServiceDep,
+    range_from: Annotated[
+        str | None,
+        Query(alias="from", description="ISO 8601 início do intervalo"),
+    ] = None,
+    range_to: Annotated[
+        str | None,
+        Query(alias="to", description="ISO 8601 fim do intervalo"),
+    ] = None,
+):
+    try:
+        rows = calendar_service.list_friend_events(
+            str(current_user["id"]),
+            friend_user_id,
+            _parse_iso_query(range_from),
+            _parse_iso_query(range_to),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     return [_event_to_response(r) for r in rows]
 
 
@@ -76,6 +104,41 @@ def create_calendar_event(
         return _event_to_response(row)
     except InvalidEventIntervalError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/friends/{friend_user_id}/event-requests", response_model=FriendCalendarEventRequestResponse)
+def create_friend_calendar_event_or_request(
+    friend_user_id: str,
+    payload: CalendarEventCreate,
+    current_user: CurrentUserDep,
+    calendar_service: CalendarServiceDep,
+):
+    guests = [(g.name, g.email) for g in payload.guests]
+    try:
+        result = calendar_service.create_friend_event_or_request(
+            str(current_user["id"]),
+            friend_user_id,
+            str(current_user.get("name") or "Um usuário"),
+            title=payload.title,
+            starts_at=payload.starts_at,
+            ends_at=payload.ends_at,
+            event_type=payload.event_type,
+            color=payload.color,
+            description=payload.description,
+            status=payload.status,
+            guests=guests,
+        )
+    except InvalidEventIntervalError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    event = result.get("event")
+    notification = result.get("notification")
+    return FriendCalendarEventRequestResponse(
+        mode=str(result["mode"]),
+        event=_event_to_response(event) if event else None,
+        notification_id=str(notification["id"]) if notification else None,
+    )
 
 
 @router.get("/events/{event_id}", response_model=CalendarEventResponse)

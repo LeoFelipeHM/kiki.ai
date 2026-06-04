@@ -52,7 +52,26 @@ export async function fetchCalendarEvents(from: Date, to: Date): Promise<Calenda
     res = await authorizedFetch(`/calendar/events?${qs}`);
   } catch (e) {
     if (e instanceof AuthSessionExpiredError) throw e;
-    throw new Error('Não foi possível carregar o calendário.');
+    throw new Error('Não foi possível carregar o calendário.', { cause: e });
+  }
+  if (!res.ok) {
+    throw new Error(await parseCalendarError(res));
+  }
+  const rows: CalendarEventApi[] = await res.json();
+  return rows.map(mapApiEventToCalendarEvent);
+}
+
+export async function fetchFriendCalendarEvents(friendUserId: string, from: Date, to: Date): Promise<CalendarEvent[]> {
+  const qs = new URLSearchParams({
+    from: isoQuery(from),
+    to: isoQuery(to),
+  });
+  let res: Response;
+  try {
+    res = await authorizedFetch(`/calendar/friends/${friendUserId}/events?${qs}`);
+  } catch (e) {
+    if (e instanceof AuthSessionExpiredError) throw e;
+    throw new Error('Não foi possível carregar a agenda do amigo.', { cause: e });
   }
   if (!res.ok) {
     throw new Error(await parseCalendarError(res));
@@ -92,12 +111,45 @@ export async function createCalendarEvent(payload: CreateCalendarPayload): Promi
     });
   } catch (e) {
     if (e instanceof AuthSessionExpiredError) throw e;
-    throw new Error('Não foi possível criar o evento.');
+    throw new Error('Não foi possível criar o evento.', { cause: e });
   }
 
   if (!res.ok) throw new Error(await parseCalendarError(res));
   const row: CalendarEventApi = await res.json();
   return mapApiEventToCalendarEvent(row);
+}
+
+export async function createFriendCalendarEventRequest(
+  friendUserId: string,
+  payload: CreateCalendarPayload,
+): Promise<{ mode: string; event?: CalendarEvent; notificationId?: string }> {
+  const body = {
+    title: payload.title,
+    starts_at: payload.startsAt,
+    ends_at: payload.endsAt,
+    event_type: payload.eventType,
+    color: payload.color ?? null,
+    description: payload.description ?? null,
+    status: payload.status ?? 'confirmed',
+    guests: (payload.guests ?? []).map((g) => ({ name: g.name, email: g.email ?? null })),
+  };
+  let res: Response;
+  try {
+    res = await authorizedFetch(`/calendar/friends/${friendUserId}/event-requests`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    if (e instanceof AuthSessionExpiredError) throw e;
+    throw new Error('Não foi possível solicitar o evento.', { cause: e });
+  }
+  if (!res.ok) throw new Error(await parseCalendarError(res));
+  const row: { mode: string; event?: CalendarEventApi | null; notification_id?: string | null } = await res.json();
+  return {
+    mode: row.mode,
+    event: row.event ? mapApiEventToCalendarEvent(row.event) : undefined,
+    notificationId: row.notification_id ?? undefined,
+  };
 }
 
 export interface PatchCalendarPayload {
@@ -132,7 +184,7 @@ export async function patchCalendarEvent(id: string, payload: PatchCalendarPaylo
     });
   } catch (e) {
     if (e instanceof AuthSessionExpiredError) throw e;
-    throw new Error('Não foi possível atualizar o evento.');
+    throw new Error('Não foi possível atualizar o evento.', { cause: e });
   }
 
   if (!res.ok) throw new Error(await parseCalendarError(res));
@@ -146,7 +198,7 @@ export async function deleteCalendarEvent(id: string): Promise<void> {
     res = await authorizedFetch(`/calendar/events/${id}`, { method: 'DELETE' });
   } catch (e) {
     if (e instanceof AuthSessionExpiredError) throw e;
-    throw new Error('Não foi possível excluir o evento.');
+    throw new Error('Não foi possível excluir o evento.', { cause: e });
   }
   if (!res.ok && res.status !== 204) {
     throw new Error(await parseCalendarError(res));
