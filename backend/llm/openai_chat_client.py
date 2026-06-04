@@ -10,9 +10,9 @@ from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 from llm.model_policy import coerce_multimodal_openai_model
 from llm.prompts.kiki_system import KIKI_SYSTEM_PROMPT
 from llm.sanitize import sanitize_reply
-from llm.tools.agent import ToolAgentError, run_tool_agent, run_tool_agent_stream
+from llm.tools.agent import ToolAgentError, UsageRecorder, run_tool_agent, run_tool_agent_stream
 
-DEFAULT_MODEL = "gpt-5.4-mini"
+DEFAULT_MODEL = "gpt-5.4-nano"
 
 
 class OpenAIChatConfigurationError(Exception):
@@ -70,6 +70,11 @@ def generate_reply_with_tools(
     reasoning_effort: str | None = None,
     max_tool_turns: int = 6,
     request_timeout_seconds: float | None = None,
+    include_web_search: bool = True,
+    web_search_context_size: str | None = None,
+    tool_names: set[str] | None = None,
+    system_instructions: str | None = None,
+    usage_recorder: UsageRecorder | None = None,
 ) -> str:
     """Próxima mensagem do assistente (OpenAI Responses API) com web_search + tool-calling para calendário/notas/contatos."""
     try:
@@ -88,6 +93,11 @@ def generate_reply_with_tools(
             reasoning_effort=reasoning_effort,
             max_tool_turns=max_tool_turns,
             request_timeout_seconds=request_timeout_seconds,
+            include_web_search=include_web_search,
+            web_search_context_size=web_search_context_size,
+            tool_names=tool_names,
+            system_instructions=system_instructions,
+            usage_recorder=usage_recorder,
         )
     except ToolAgentError as exc:
         raise OpenAIChatCompletionError(str(exc)) from exc

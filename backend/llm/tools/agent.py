@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import time
 from collections.abc import Iterator
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
@@ -13,8 +15,9 @@ from llm.sanitize import sanitize_reply
 from llm.tools.dispatcher import execute_tool_call
 from llm.tools.schemas import ToolName, tools_schema_responses
 
-DEFAULT_MODEL = "gpt-5.4-mini"
+DEFAULT_MODEL = "gpt-5.4-nano"
 DEFAULT_MAX_TOOL_TURNS = 6
+UsageRecorder = Callable[[dict[str, Any]], None]
 
 
 class ToolAgentError(Exception):
@@ -40,9 +43,29 @@ def _responses_model(model: str | None) -> str:
     return coerce_multimodal_openai_model(configured, DEFAULT_MODEL)
 
 
-def _web_search_tool(user_timezone: str | None) -> dict[str, Any]:
+def _env_int(name: str, fallback: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return fallback
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return fallback
+
+
+def _env_float(name: str, fallback: float) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return fallback
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return fallback
+
+
+def _web_search_tool(user_timezone: str | None, *, context_size: str | None = None) -> dict[str, Any]:
     tz = (user_timezone or "").strip() or "America/Sao_Paulo"
-    ctx = (os.getenv("OPENAI_WEB_SEARCH_CONTEXT_SIZE") or "medium").strip().lower()
+    ctx = (context_size or os.getenv("OPENAI_WEB_SEARCH_CONTEXT_SIZE") or "medium").strip().lower()
     if ctx not in ("low", "medium", "high"):
         ctx = "medium"
     return {
@@ -66,6 +89,45 @@ def _reasoning_param(model: str, effort: str | None = None) -> dict[str, Any]:
     return {"reasoning": {"effort": raw}}
 
 
+def _usage_payload(resp: Any) -> dict[str, Any]:
+    usage = getattr(resp, "usage", None)
+    if usage is None:
+        return {}
+    if hasattr(usage, "model_dump"):
+        raw = usage.model_dump()
+    elif isinstance(usage, dict):
+        raw = usage
+    else:
+        raw = {
+            key: getattr(usage, key)
+            for key in ("input_tokens", "output_tokens", "total_tokens")
+            if hasattr(usage, key)
+        }
+    return {k: v for k, v in raw.items() if isinstance(v, int | float | str | bool | type(None))}
+
+
+def _create_response_with_retry(client: OpenAI, kwargs: dict[str, Any]) -> Any:
+    retries = _env_int("OPENAI_RATE_LIMIT_MAX_RETRIES", 1)
+    base_sleep = _env_float("OPENAI_RATE_LIMIT_BACKOFF_SECONDS", 2.0)
+    for attempt in range(retries + 1):
+        try:
+            return client.responses.create(**kwargs)
+        except (RateLimitError, APIConnectionError):
+            if attempt >= retries:
+                raise
+            delay = base_sleep * (2**attempt) + random.uniform(0.0, min(1.0, base_sleep))
+            time.sleep(delay)
+        except APIStatusError as exc:
+            status_code = int(getattr(exc, "status_code", 0) or 0)
+            if status_code not in (408, 409, 429) and status_code < 500:
+                raise
+            if attempt >= retries:
+                raise
+            delay = base_sleep * (2**attempt) + random.uniform(0.0, min(1.0, base_sleep))
+            time.sleep(delay)
+    raise ToolAgentError("Falha inesperada ao tentar chamar a OpenAI.")
+
+
 def run_tool_agent(
     messages: list[tuple[str, str]],
     *,
@@ -82,12 +144,20 @@ def run_tool_agent(
     max_tool_turns: int = DEFAULT_MAX_TOOL_TURNS,
     reasoning_effort: str | None = None,
     request_timeout_seconds: float | None = None,
+    include_web_search: bool = True,
+    web_search_context_size: str | None = None,
+    tool_names: set[str] | None = None,
+    system_instructions: str | None = None,
+    usage_recorder: UsageRecorder | None = None,
 ) -> str:
     """Responses API: web_search (provedor) + function tools (calendário/notas)."""
     client = _client(api_key, timeout_seconds=request_timeout_seconds)
     mdl = _responses_model(model)
 
-    tools = [_web_search_tool(current_user_timezone)] + tools_schema_responses()
+    tools: list[dict[str, Any]] = []
+    if include_web_search:
+        tools.append(_web_search_tool(current_user_timezone, context_size=web_search_context_size))
+    tools.extend(tools_schema_responses(tool_names))
 
     input_messages: list[dict[str, Any]] = []
     latest_user_index = max((i for i, (role, _text) in enumerate(messages) if role == "user"), default=-1)
@@ -122,17 +192,22 @@ def run_tool_agent(
     next_input: list[dict[str, Any]] = input_messages
 
     try:
-        for _ in range(max_tool_turns):
+        for turn_index in range(max_tool_turns):
             kwargs: dict[str, Any] = {
                 "model": mdl,
-                "tools": tools,
                 "truncation": "auto",
                 "parallel_tool_calls": True,
             }
+            if tools:
+                kwargs["tools"] = tools
             kwargs.update(_reasoning_param(mdl, reasoning_effort))
 
             if previous_response_id is None:
-                instructions = build_kiki_system_instructions(current_user_timezone)
+                instructions = (
+                    system_instructions.strip()
+                    if system_instructions and system_instructions.strip()
+                    else build_kiki_system_instructions(current_user_timezone)
+                )
                 extra_context = (additional_system_context or "").strip()
                 if extra_context:
                     instructions += f"\n\n--- Contexto interno da sessão ---\n{extra_context}\n---"
@@ -142,7 +217,7 @@ def run_tool_agent(
                 kwargs["previous_response_id"] = previous_response_id
                 kwargs["input"] = next_input
 
-            resp = client.responses.create(**kwargs)
+            resp = _create_response_with_retry(client, kwargs)
 
             err = getattr(resp, "error", None)
             if err is not None:
@@ -152,6 +227,15 @@ def run_tool_agent(
             previous_response_id = resp.id
 
             calls = [item for item in resp.output if getattr(item, "type", None) == "function_call"]
+            if usage_recorder is not None:
+                usage_recorder(
+                    {
+                        "model": mdl,
+                        "turn_index": turn_index,
+                        "tool_calls": len(calls),
+                        "usage": _usage_payload(resp),
+                    }
+                )
 
             if calls:
                 outputs: list[dict[str, Any]] = []

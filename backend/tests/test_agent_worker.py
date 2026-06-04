@@ -146,9 +146,55 @@ def test_real_step_uses_bounded_tool_execution(monkeypatch: Any) -> None:
     )
 
     assert result == "Pesquisa concluída."
-    assert observed["reasoning_effort"] == "high"
-    assert observed["max_tool_turns"] == 3
+    assert observed["model"] == "gpt-5.4-mini"
+    assert observed["reasoning_effort"] == "medium"
+    assert observed["max_tool_turns"] == 2
     assert observed["request_timeout_seconds"] == 120.0
+    assert observed["web_search_context_size"] == "low"
+    assert observed["system_instructions"] == agent_worker.AGENT_SYSTEM_INSTRUCTIONS
+
+
+def test_medium_effort_agent_uses_nano_model(monkeypatch: Any) -> None:
+    observed: dict[str, Any] = {}
+
+    def fake_generate_reply_with_tools(*_: Any, **kwargs: Any) -> str:
+        observed.update(kwargs)
+        return "Pesquisa concluída."
+
+    agent = _agent()
+    agent["effort"] = "medium"
+    monkeypatch.setattr(agent_worker, "generate_reply_with_tools", fake_generate_reply_with_tools)
+
+    result = agent_worker.default_agent_step_runner(
+        agent,
+        {"id": "s1", "description": "Pesquisar contexto atual"},
+        [],
+        _Service(),
+        _Service(),
+        _Service(),
+    )
+
+    assert result == "Pesquisa concluída."
+    assert observed["model"] == "gpt-5.4-nano"
+    assert observed["reasoning_effort"] == "low"
+
+
+def test_local_review_step_does_not_call_external_runner(monkeypatch: Any) -> None:
+    def fail_external_call(*_: Any, **__: Any) -> str:
+        raise AssertionError("Etapa local não deve chamar OpenAI.")
+
+    monkeypatch.setattr(agent_worker, "generate_reply_with_tools", fail_external_call)
+
+    result = agent_worker.default_agent_step_runner(
+        _agent(),
+        {"id": "r1", "description": "Validar coerência dos achados antes da resposta final"},
+        [],
+        _Service(),
+        _Service(),
+        _Service(),
+    )
+
+    assert result.startswith("Etapa tratada localmente")
 
 
 def test_worker_completes_steps_and_saves_result(monkeypatch: Any) -> None:
@@ -170,6 +216,215 @@ def test_worker_completes_steps_and_saves_result(monkeypatch: Any) -> None:
     assert state["agent"]["steps"][0]["details"] == "Etapa concluída: Entender objetivo"
     assert state["agent"]["steps"][1]["details"] == "Etapa concluída: Coletar informações relevantes"
     assert state["messages"][-1]["role"] == "agent"
+
+
+def test_worker_saves_short_step_details_without_links(monkeypatch: Any) -> None:
+    state = {"agent": _agent(), "messages": []}
+    state["agent"]["steps"] = [
+        {"id": "s1", "description": "Coletar informações relevantes", "status": "pending"},
+    ]
+    _patch_worker(monkeypatch, state)
+
+    def step_with_links(*_: Any) -> str:
+        return (
+            "Consultei a Clínica A ([site oficial](https://clinica.example/agendar)) e comparei com "
+            "https://doctoralia.example/perfil. O resumo ficou muito longo " + ("com detalhes " * 40)
+        )
+
+    result = agent_worker.execute_claimed_agent(
+        _Conn(),
+        state["agent"],
+        runner=lambda *_: "Resposta final",
+        step_runner=step_with_links,
+        step_sleep_seconds=0,
+    )
+
+    details = state["agent"]["steps"][0]["details"]
+    assert result is not None
+    assert result["status"] == "completed"
+    assert "http" not in details
+    assert "site oficial" in details
+    assert len(details) <= 220
+
+
+def test_worker_preserves_raw_step_results_for_final_answer(monkeypatch: Any) -> None:
+    state = {"agent": _agent(), "messages": []}
+    state["agent"]["task"] = "Achar oftalmologista com contato por WhatsApp"
+    state["agent"]["steps"] = [
+        {"id": "s1", "description": "Coletar opções com contato", "status": "pending"},
+    ]
+    _patch_worker(monkeypatch, state)
+
+    raw = "Clínica A: WhatsApp https://wa.me/5541999999999, telefone (41) 99999-9999, site https://clinica.example"
+    observed: dict[str, Any] = {}
+
+    def final_runner(agent: dict[str, Any], *_: Any) -> str:
+        observed["raw"] = agent.get("_raw_step_results")
+        return "Resposta final com contatos."
+
+    result = agent_worker.execute_claimed_agent(
+        _Conn(),
+        state["agent"],
+        runner=final_runner,
+        step_runner=lambda *_: raw,
+        step_sleep_seconds=0,
+    )
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert "https://" not in state["agent"]["steps"][0]["details"]
+    assert observed["raw"][0]["details"] == raw
+
+
+def test_default_final_runner_requests_complete_answer_with_contacts(monkeypatch: Any) -> None:
+    observed: dict[str, Any] = {}
+
+    def fake_generate_reply_with_tools(messages: list[tuple[str, str]], **kwargs: Any) -> str:
+        observed["prompt"] = messages[0][1]
+        observed["context"] = kwargs["additional_system_context"]
+        return "Resposta final detalhada."
+
+    agent = _agent()
+    agent["task"] = "Encontrar médico e trazer contato"
+    agent["_raw_step_results"] = [
+        {
+            "description": "Pesquisar clínicas",
+            "details": "Clínica A com WhatsApp https://wa.me/5541999999999 e telefone (41) 99999-9999.",
+        }
+    ]
+    monkeypatch.setattr(agent_worker, "generate_reply_with_tools", fake_generate_reply_with_tools)
+
+    result = agent_worker.default_agent_runner(agent, [], _Service(), _Service(), _Service())
+
+    assert result == "Resposta final detalhada."
+    assert "texto substancial" in observed["prompt"]
+    assert "contatos encontrados" in observed["prompt"]
+    assert "Inclua as URLs reais em texto puro" in observed["prompt"]
+    assert "mostre esse link de WhatsApp" in observed["prompt"]
+    assert "Não oculte links de contato" in observed["prompt"]
+    assert "Se não conseguir confirmar horário" in observed["prompt"]
+    assert "https://wa.me/5541999999999" in observed["context"]
+
+
+def test_worker_enforces_openai_call_budget(monkeypatch: Any) -> None:
+    state = {"agent": _agent(), "messages": []}
+    state["agent"]["steps"] = [
+        {"id": "s1", "description": "Coletar informações relevantes", "status": "pending"},
+    ]
+    _patch_worker(monkeypatch, state)
+    monkeypatch.setenv("AGENT_OPENAI_MAX_CALLS_PER_AGENT", "1")
+
+    calls = 0
+
+    def fake_generate_reply_with_tools(*_: Any, **__: Any) -> str:
+        nonlocal calls
+        calls += 1
+        return f"resposta {calls}"
+
+    monkeypatch.setattr(agent_worker, "generate_reply_with_tools", fake_generate_reply_with_tools)
+
+    result = agent_worker.execute_claimed_agent(
+        _Conn(),
+        state["agent"],
+        step_sleep_seconds=0,
+    )
+
+    assert result is not None
+    assert result["status"] == "error"
+    assert result["error_message"] == "Limite de chamadas OpenAI por agente excedido."
+    assert calls == 1
+
+
+def test_worker_groups_low_medium_openai_steps(monkeypatch: Any) -> None:
+    state = {"agent": _agent(), "messages": []}
+    state["agent"]["effort"] = "medium"
+    state["agent"]["steps"] = [
+        {"id": "s1", "description": "Coletar informações relevantes", "status": "pending"},
+        {"id": "s2", "description": "Comparar alternativas por custo e benefício", "status": "pending"},
+    ]
+    _patch_worker(monkeypatch, state)
+
+    prompts: list[str] = []
+
+    def fake_generate_reply_with_tools(messages: list[tuple[str, str]], **__: Any) -> str:
+        prompts.append(messages[0][1])
+        return "execução agrupada"
+
+    monkeypatch.setattr(agent_worker, "generate_reply_with_tools", fake_generate_reply_with_tools)
+
+    result = agent_worker.execute_claimed_agent(
+        _Conn(),
+        state["agent"],
+        runner=lambda *_: "Resposta final",
+        step_sleep_seconds=0,
+    )
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert len(prompts) == 1
+    assert "Coletar informações relevantes" in prompts[0]
+    assert "Comparar alternativas por custo e benefício" in prompts[0]
+    assert all(step["status"] == "completed" for step in state["agent"]["steps"])
+
+
+def test_worker_continues_when_step_openai_timeout(monkeypatch: Any) -> None:
+    state = {"agent": _agent(), "messages": []}
+    state["agent"]["steps"] = [
+        {"id": "s1", "description": "Coletar informações relevantes", "status": "pending"},
+    ]
+    _patch_worker(monkeypatch, state)
+
+    def timeout_step(*_: Any) -> str:
+        raise agent_worker.OpenAIChatCompletionError("Request timed out.")
+
+    result = agent_worker.execute_claimed_agent(
+        _Conn(),
+        state["agent"],
+        runner=lambda *_: "Resposta final mesmo com fallback.",
+        step_runner=timeout_step,
+        step_sleep_seconds=0,
+    )
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert result["results"] == "Resposta final mesmo com fallback."
+    assert state["agent"]["steps"][0]["status"] == "completed"
+    assert "fallback" in state["agent"]["steps"][0]["details"]
+    assert "Request timed out" in state["agent"]["steps"][0]["details"]
+
+
+def test_worker_uses_local_final_fallback_when_final_openai_timeout(monkeypatch: Any) -> None:
+    state = {"agent": _agent(), "messages": []}
+    _patch_worker(monkeypatch, state)
+
+    def timeout_final(*_: Any) -> str:
+        raise agent_worker.OpenAIChatCompletionError("The request timed out.")
+
+    result = agent_worker.execute_claimed_agent(
+        _Conn(),
+        state["agent"],
+        runner=timeout_final,
+        step_runner=_step_runner,
+        step_sleep_seconds=0,
+    )
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert "Não consegui gerar a consolidação final" in result["results"]
+    assert "Achados preservados antes da falha" in result["results"]
+    assert "Resumo das etapas" in result["results"]
+    assert state["messages"][-1]["role"] == "agent"
+    assert state["messages"][-1]["content"] == result["results"]
+
+
+def test_appointment_agent_enables_calendar_and_site_browsing_tools() -> None:
+    agent = _agent()
+    agent["task"] = "Marcar um oftalmologista para mim, olhando minha agenda e sites de clínicas."
+
+    names = agent_worker._tool_names_for_agent(agent, [])
+
+    assert "calendar_list_events" in names
+    assert "web_browse_page" in names
 
 
 def test_worker_only_starts_next_step_after_current_step_finishes(monkeypatch: Any) -> None:

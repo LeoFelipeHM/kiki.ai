@@ -1,11 +1,7 @@
 import {
-  AlertCircle,
   Bot,
-  Brain,
-  CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Clock,
   FileSearch,
   Loader2,
   Menu,
@@ -58,25 +54,8 @@ function iconForType(type: AgentType) {
   return AGENT_TYPES.find((item) => item.id === type)?.icon ?? Bot;
 }
 
-function statusLabel(agent: Agent) {
-  if (agent.status === 'planned') return 'Planejado';
-  if (agent.status === 'queued') return 'Aguardando início';
-  if (agent.status === 'working') return 'Em execução';
-  if (agent.status === 'paused') return 'Pausado';
-  if (agent.status === 'completed') return 'Concluído';
-  return 'Erro';
-}
-
 function progressForDisplay(agent: Agent) {
   return agent.status === 'completed' ? 100 : Math.min(agent.progress, 99);
-}
-
-function statusIcon(agent: Agent) {
-  if (agent.status === 'completed') return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-  if (agent.status === 'error') return <AlertCircle className="w-4 h-4 text-red-500" />;
-  if (agent.status === 'queued') return <Clock className="w-4 h-4 text-blue-500" />;
-  if (agent.status === 'working') return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
-  return <Brain className="w-4 h-4 text-purple-500" />;
 }
 
 export function AgentsScreen({
@@ -233,17 +212,12 @@ export function AgentsScreen({
             >
               <div className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className={`relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${agent.color} shadow-md ${agent.status === 'working' ? 'agent-avatar-active' : ''}`}>
-                    {agent.status === 'working' && <div className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-white bg-blue-500"><div className="h-full w-full animate-ping rounded-full bg-blue-500" /></div>}
-                    <Icon className={`relative z-10 h-6 w-6 text-white ${agent.status === 'working' ? 'agent-icon-working' : ''}`} />
+                  <div className={`relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${agent.color}`}>
+                    <Icon className="relative z-10 h-6 w-6 text-white" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex items-center gap-2">
                       <h3 className="truncate text-base font-semibold">{agent.name}</h3>
-                      <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                        {statusIcon(agent)}
-                        {statusLabel(agent)}
-                      </span>
                     </div>
                     <p className="line-clamp-2 text-sm text-muted-foreground">{agent.task}</p>
                     {agent.currentAction && <p className="mt-1 text-xs font-medium text-blue-600">{agent.currentAction}</p>}

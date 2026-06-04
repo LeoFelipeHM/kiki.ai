@@ -10,6 +10,7 @@ from application.contacts_service import DuplicateContactEmailError
 from domain.calendar import RecurrenceValidationError, ScheduleConflictError
 
 from llm.tools.schemas import ToolName
+from llm.tools.web_browse import browse_public_page
 
 log = logging.getLogger("kiki.llm.tools")
 DEFAULT_USER_TIMEZONE = "America/Sao_Paulo"
@@ -66,6 +67,32 @@ def _find_agent_id_by_name(rows: list[dict[str, Any]], name: str) -> str | None:
     if len(contains) == 1:
         return str(contains[0]["id"])
     return None
+
+
+def _editable_agent_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [row for row in rows if str(row.get("status") or "") in ("planned", "paused", "error")]
+
+
+def _resolve_editable_agent_id(rows: list[dict[str, Any]], name: str, agent_id: str) -> tuple[str | None, str | None]:
+    if name:
+        resolved = _find_agent_id_by_name(rows, name)
+        if resolved:
+            return resolved, None
+        available = ", ".join(str(row.get("name") or "") for row in _editable_agent_rows(rows)[:5])
+        suffix = f" Agentes editáveis: {available}." if available else ""
+        return None, f"Não encontrei um agente editável com esse nome.{suffix}"
+    if agent_id:
+        match = next((row for row in rows if str(row.get("id")) == agent_id), None)
+        if match and str(match.get("status") or "") in ("planned", "paused", "error"):
+            return agent_id, None
+        return None, "Esse agente não está editável agora."
+    editable = _editable_agent_rows(rows)
+    if len(editable) == 1:
+        return str(editable[0]["id"]), None
+    if not editable:
+        return None, "Não há agente editável para receber essa instrução."
+    available = ", ".join(str(row.get("name") or "") for row in editable[:5])
+    return None, f"Qual agente devo corrigir? Agentes editáveis: {available}."
 
 
 def _parse_iso_dt(value: str, user_timezone: str | None) -> datetime:
@@ -473,9 +500,23 @@ def execute_tool_call(
                     return _tool_error("Contato não encontrado.")
                 return _tool_ok({"deleted": True})
 
+        if name == "web_browse_page":
+            url = str(arguments.get("url") or "").strip()
+            if not url:
+                return _tool_error("Informe a URL pública da página.")
+            try:
+                return _tool_ok(browse_public_page(url))
+            except ValueError as exc:
+                return _tool_error(str(exc))
+            except TimeoutError:
+                return _tool_error("Tempo esgotado ao abrir a página.")
+            except Exception as exc:
+                return _tool_error(f"Não consegui abrir a página: {exc}")
+
         if name in (
             "agents_list_agents",
             "agents_create_agent",
+            "agents_add_instruction",
             "agents_authorize_agent",
         ):
             if agents_service is None:
@@ -505,6 +546,24 @@ def execute_tool_call(
                     name=name_val,
                 )
                 return _tool_ok(_agent_public(row))
+
+            if name == "agents_add_instruction":
+                instruction = str(arguments.get("instruction") or "").strip()
+                if not instruction:
+                    return _tool_error("Informe a instrução adicional para o agente.")
+                agent_name = str(arguments.get("agent_name") or "").strip()
+                agent_id = str(arguments.get("agent_id") or "").strip()
+                rows = agents_service.list_agents(current_user_id)
+                resolved, error = _resolve_editable_agent_id(rows, agent_name, agent_id)
+                if error:
+                    return _tool_error(error)
+                assert resolved is not None
+                message = agents_service.create_message(current_user_id, resolved, instruction)
+                agent_row = next((row for row in agents_service.list_agents(current_user_id) if str(row.get("id")) == resolved), None)
+                payload = _agent_public(agent_row) if agent_row else {"instruction_added": True}
+                payload["instruction_added"] = True
+                payload["instruction"] = message.get("content") if isinstance(message, dict) else instruction
+                return _tool_ok(payload)
 
             if name == "agents_authorize_agent":
                 agent_name = str(arguments.get("agent_name") or "").strip()

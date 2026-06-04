@@ -87,31 +87,134 @@ function trimTrailingUrlPunctuation(url: string) {
   };
 }
 
-function LinkedText({ text }: { text: string }) {
+type LinkMatch = {
+  start: number;
+  end: number;
+  rawUrl: string;
+  trailing: string;
+};
+
+function normalizeUrl(url: string) {
+  return url.replace(/\s+/g, '').trim();
+}
+
+function whatsappUrlFromPhone(rawPhone: string) {
+  let digits = rawPhone.replace(/\D+/g, '');
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
+  if (digits.length < 12) return null;
+  return `https://wa.me/${digits}`;
+}
+
+function collectLinkMatches(text: string): LinkMatch[] {
+  const matches: LinkMatch[] = [];
+  const occupied: Array<[number, number]> = [];
+
+  const addMatch = (start: number, end: number, rawUrl: string, trailing = '') => {
+    if (occupied.some(([s, e]) => start < e && end > s)) return;
+    matches.push({ start, end, rawUrl: normalizeUrl(rawUrl), trailing });
+    occupied.push([start, end]);
+  };
+
+  const markdownRegex = /\(?\[[^\]]+\]\(\s*(https?:\/\/[\s\S]*?)\s*\)\)?/g;
+  let markdownMatch: RegExpExecArray | null;
+  while ((markdownMatch = markdownRegex.exec(text)) !== null) {
+    const rawUrl = markdownMatch[1].split(/\s*\)\s*\)?/)[0];
+    addMatch(markdownMatch.index, markdownMatch.index + markdownMatch[0].length, rawUrl);
+  }
+
   const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+  let urlMatch: RegExpExecArray | null;
+  while ((urlMatch = urlRegex.exec(text)) !== null) {
+    const rawUrl = urlMatch[0];
+    const { href, trailing } = trimTrailingUrlPunctuation(rawUrl);
+    addMatch(urlMatch.index, urlMatch.index + rawUrl.length, href, trailing);
+  }
+
+  const phoneRegex = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9\s*)?\d{4}[-\s]?\d{4}/g;
+  let phoneMatch: RegExpExecArray | null;
+  while ((phoneMatch = phoneRegex.exec(text)) !== null) {
+    const nearby = text.slice(Math.max(0, phoneMatch.index - 80), Math.min(text.length, phoneMatch.index + phoneMatch[0].length + 80));
+    if (!nearby.toLowerCase().includes('whatsapp')) continue;
+    const whatsappUrl = whatsappUrlFromPhone(phoneMatch[0]);
+    if (!whatsappUrl) continue;
+    addMatch(phoneMatch.index, phoneMatch.index + phoneMatch[0].length, whatsappUrl);
+  }
+
+  return matches.sort((a, b) => a.start - b.start);
+}
+
+function isWhatsAppUrl(url: string) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'wa.me' || host.endsWith('.wa.me') || host === 'api.whatsapp.com' || host.endsWith('.whatsapp.com');
+  } catch {
+    return false;
+  }
+}
+
+function whatsappMessageForTask(task: string) {
+  const cleanTask = task.replace(/\s+/g, ' ').trim();
+  const lower = cleanTask.toLowerCase();
+  if (lower.includes('oftalmo') || lower.includes('médico') || lower.includes('medico') || lower.includes('consulta')) {
+    return 'Olá, tudo bem? Gostaria de saber a disponibilidade para uma consulta de oftalmologia.';
+  }
+  if (cleanTask) {
+    return `Olá, tudo bem? Gostaria de saber mais informações sobre: ${cleanTask}.`;
+  }
+  return 'Olá, tudo bem? Gostaria de saber mais informações.';
+}
+
+function withWhatsAppMessage(url: string, message: string) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.toLowerCase() === 'wa.me' || parsed.hostname.toLowerCase().endsWith('.wa.me')) {
+      parsed.searchParams.set('text', message);
+      return parsed.toString();
+    }
+    if (parsed.hostname.toLowerCase() === 'api.whatsapp.com' || parsed.hostname.toLowerCase().endsWith('.whatsapp.com')) {
+      parsed.searchParams.set('text', message);
+      return parsed.toString();
+    }
+  } catch {
+    return url;
+  }
+  return url;
+}
+
+function siteButtonLabel(url: string) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return `Abrir site: ${host}`;
+  } catch {
+    return 'Abrir site';
+  }
+}
+
+function LinkedText({ text, whatsappContext }: { text: string; whatsappContext?: string }) {
+  const linkMatches = collectLinkMatches(text);
   const nodes: React.ReactNode[] = [];
   let lastIndex = 0;
-  let match: RegExpExecArray | null;
 
-  while ((match = urlRegex.exec(text)) !== null) {
-    const rawUrl = match[0];
-    const start = match.index;
+  for (const match of linkMatches) {
+    const start = match.start;
     if (start > lastIndex) nodes.push(text.slice(lastIndex, start));
 
-    const { href, trailing } = trimTrailingUrlPunctuation(rawUrl);
+    const href = match.rawUrl;
+    const isWhatsApp = isWhatsAppUrl(href);
+    const displayHref = isWhatsApp && whatsappContext ? withWhatsAppMessage(href, whatsappMessageForTask(whatsappContext)) : href;
     nodes.push(
       <a
         key={`${href}-${start}`}
-        href={href}
+        href={displayHref}
         target="_blank"
         rel="noreferrer"
-        className="my-1 inline-flex max-w-full items-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm btn-apple-gradient"
+        className={`my-1 inline-flex max-w-full items-center rounded-lg px-3 py-1.5 text-xs font-medium text-white shadow-sm ${isWhatsApp ? 'bg-green-500 hover:bg-green-600 btn-apple' : 'bg-gradient-to-br from-blue-500 to-cyan-500 btn-apple-gradient'}`}
       >
-        <span className="truncate">{href}</span>
+        <span className="truncate">{isWhatsApp ? 'Abrir WhatsApp' : siteButtonLabel(href)}</span>
       </a>,
     );
-    if (trailing) nodes.push(trailing);
-    lastIndex = start + rawUrl.length;
+    if (match.trailing) nodes.push(match.trailing);
+    lastIndex = match.end;
   }
 
   if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
@@ -202,6 +305,7 @@ export function AgentDetailScreen({
     try {
       const message = await createAgentMessage(agent.id, content);
       setMessages((prev) => [...prev, message]);
+      await loadAgent(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível enviar mensagem.');
       setNewMessage(content);
@@ -230,7 +334,7 @@ export function AgentDetailScreen({
           <button onClick={onNavigateBack} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted btn-apple">
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <div className={`relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${agent.color} shadow-md ${agent.status === 'working' ? 'agent-avatar-active' : ''}`}>
+          <div className={`relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${agent.color} ${agent.status === 'working' ? 'agent-avatar-active' : ''}`}>
             {agent.status === 'working' && <div className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-white bg-blue-500"><div className="absolute inset-0 animate-ping rounded-full bg-blue-500" /></div>}
             <Icon className={`relative z-10 h-6 w-6 text-white ${agent.status === 'working' ? 'agent-icon-working' : ''}`} />
           </div>
@@ -369,7 +473,7 @@ export function AgentDetailScreen({
                   </button>
                 </div>
                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                  <LinkedText text={agent.results} />
+                  <LinkedText text={agent.results} whatsappContext={agent.task} />
                 </p>
                 <button
                   onClick={() => void navigator.clipboard.writeText(agent.results || '')}
@@ -402,7 +506,7 @@ export function AgentDetailScreen({
                   <div className={`max-w-[75%] ${message.role === 'user' ? 'items-end' : ''}`}>
                     <div className={`rounded-2xl px-4 py-2 ${message.role === 'agent' ? 'bg-muted' : `bg-gradient-to-br ${themeColor} text-white`}`}>
                       <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                        <LinkedText text={message.content} />
+                        <LinkedText text={message.content} whatsappContext={agent.task} />
                       </p>
                     </div>
                     <p className="mt-1 px-2 text-xs text-muted-foreground">{formatTime(message.createdAt)}</p>

@@ -79,7 +79,14 @@ EFFORT_EXTRA_STEPS: dict[AgentEffort, list[str]] = {
 
 
 def fallback_agent_plan(agent_type: AgentType, effort: AgentEffort) -> list[str]:
-    return [PLANNING_STEP, *TYPE_PLANS[agent_type], *EFFORT_EXTRA_STEPS[effort]]
+    base = TYPE_PLANS[agent_type]
+    if effort == "low":
+        selected = [base[0], base[2]]
+    elif effort == "medium":
+        selected = [base[0], base[2], base[3]]
+    else:
+        selected = base[:4]
+    return [PLANNING_STEP, *selected]
 
 
 def fallback_agent_title(task: str, agent_type: AgentType) -> str:
@@ -100,7 +107,16 @@ def _model_name() -> str:
     return (
         os.getenv("OPENAI_AGENT_PLANNER_MODEL", "").strip()
         or os.getenv("OPENAI_CHAT_MODEL", "").strip()
-        or "gpt-5.4-mini"
+        or "gpt-5.4-nano"
+    )
+
+
+def _planner_enabled() -> bool:
+    return (os.getenv("OPENAI_AGENT_PLANNER_ENABLED") or "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
     )
 
 
@@ -168,11 +184,14 @@ def _parse_draft(raw: str, task: str, agent_type: AgentType) -> AgentPlanDraft |
 
 
 def build_agent_draft(task: str, agent_type: AgentType, effort: AgentEffort) -> AgentPlanDraft:
+    if not _planner_enabled():
+        return fallback_agent_draft(task, agent_type, effort)
+
     key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not key:
         return fallback_agent_draft(task, agent_type, effort)
 
-    expected = 3 if effort == "low" else 4 if effort == "medium" else 6
+    expected = 2 if effort == "low" else 3 if effort == "medium" else 4
     prompt = (
         "Gere um título curto e nomes acionáveis para as etapas de execução de um agente autônomo.\n"
         'Responda somente com JSON válido no formato: {"title":"...","steps":["..."]}.\n'

@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from application.agents_service import AgentInvalidTransitionError, AgentsService
-from application.agent_plans import AgentPlanDraft
+from application.agent_plans import AgentPlanDraft, build_agent_draft
 
 
 def _plan(task: str, agent_type: str, effort: str) -> AgentPlanDraft:
@@ -127,6 +127,22 @@ def test_create_agent_generates_steps_by_type_and_effort() -> None:
     assert row["steps"][-1]["description"] == "Revisar com esforço high"
 
 
+def test_default_planner_does_not_call_openai_when_disabled(monkeypatch: Any) -> None:
+    class FailOpenAI:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            raise AssertionError("Planner OpenAI deve ficar desligado por padrão.")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("OPENAI_AGENT_PLANNER_ENABLED", raising=False)
+    monkeypatch.setattr("application.agent_plans.OpenAI", FailOpenAI)
+
+    draft = build_agent_draft("Pesquisar IA", "research", "medium")
+
+    assert draft.title == "Pesquisador: Pesquisar IA"
+    assert len(draft.steps) == 4
+    assert draft.steps[0] == "Planejamento"
+
+
 def test_authorize_moves_planned_agent_to_queue() -> None:
     repo = _Repo()
     service = AgentsService(_Conn(), repo, plan_builder=_plan)
@@ -136,6 +152,30 @@ def test_authorize_moves_planned_agent_to_queue() -> None:
 
     assert authorized["status"] == "queued"
     assert authorized["current_action"] == "Aguardando execução"
+
+
+def test_message_on_completed_agent_requeues_follow_up() -> None:
+    repo = _Repo()
+    service = AgentsService(_Conn(), repo, plan_builder=_plan)
+    row = service.create_agent("u1", task="Encontrar médico", agent_type="research", effort="medium")
+    repo.rows[row["id"]]["status"] = "completed"
+    repo.rows[row["id"]]["progress"] = 100
+
+    message = service.create_message("u1", row["id"], "Quero seguir com a segunda opção.")
+
+    assert message["content"] == "Quero seguir com a segunda opção."
+    assert repo.rows[row["id"]]["status"] == "queued"
+    assert repo.rows[row["id"]]["current_action"] == "Aguardando resposta do agente"
+
+
+def test_message_on_planned_agent_keeps_agent_planned() -> None:
+    repo = _Repo()
+    service = AgentsService(_Conn(), repo, plan_builder=_plan)
+    row = service.create_agent("u1", task="Encontrar médico", agent_type="research", effort="medium")
+
+    service.create_message("u1", row["id"], "Filtre apenas médicos da Unimed.")
+
+    assert repo.rows[row["id"]]["status"] == "planned"
 
 
 def test_effort_cannot_change_while_working() -> None:

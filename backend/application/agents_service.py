@@ -155,5 +155,12 @@ class AgentsService:
         row = self._repo.create_message(user_id, agent_id, "user", text)
         if not row:
             raise AgentNotFoundError("Agente não encontrado.")
+        if agent["status"] == "completed":
+            self._repo.set_agent_status(
+                user_id,
+                agent_id,
+                "queued",
+                current_action="Aguardando resposta do agente",
+            )
         self._conn.commit()
         return row
