@@ -1,9 +1,16 @@
-import { Send, Sparkles, Calendar, Clock, CheckCircle2, ListTodo, Mic, MicOff, Menu, X, Phone, Square, Camera, SwitchCamera } from 'lucide-react';
+import { Send, Sparkles, Calendar, Clock, CheckCircle2, ListTodo, Mic, MicOff, Menu, X, Phone, Square, Camera, SwitchCamera, History, Plus, MessageCircle, Loader2 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLiveKitCameraFrames } from '@/hooks/useLiveKitCameraFrames';
 import { useLiveKitVoiceRoom } from '@/hooks/useLiveKitVoiceRoom';
 import { voiceCenterPrimary, voiceCenterSecondary, voiceOverlayCaption } from '@/lib/voiceUiCaptions';
-import { streamChat, type ChatApiMessage } from '@/services/chat';
+import {
+  fetchChatConversation,
+  fetchChatConversations,
+  streamChat,
+  type ChatApiMessage,
+  type ChatConversation,
+  type ChatHistoryMessage,
+} from '@/services/chat';
 import { transcribeChatAudio } from '@/services/transcription';
 
 // Web Speech API (Chrome/Edge/Safari). O TS DOM padrão não inclui esses tipos.
@@ -47,7 +54,7 @@ function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
 const SILENCE_AUTO_SEND_MS = 1500;
 
 interface Message {
-  id: number;
+  id: string;
   text: string;
   sender: 'user' | 'kiki';
   timestamp: Date;
@@ -107,18 +114,46 @@ function TypingText({ text, animate, streaming, onFinished }: {
 }
 
 const MAX_RECORDING_MS = 120_000;
+
+function createWelcomeMessage(): Message {
+  return {
+    id: 'welcome',
+    text: WELCOME_MESSAGE_FULL,
+    sender: 'kiki',
+    timestamp: new Date(),
+    streamingPhase: 'typing',
+  };
+}
+
+function historyMessageToMessage(message: ChatHistoryMessage): Message {
+  return {
+    id: message.id,
+    text: message.content,
+    sender: message.role === 'user' ? 'user' : 'kiki',
+    timestamp: message.createdAt,
+  };
+}
+
+function formatConversationDate(date: Date): string {
+  return date.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+  });
+}
+
 export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, userName = 'Maria Silva' }: ChatScreenProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      text: WELCOME_MESSAGE_FULL,
-      sender: 'kiki',
-      timestamp: new Date(),
-      streamingPhase: 'typing',
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([createWelcomeMessage()]);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const currentConversationIdRef = useRef<string | null>(null);
+  currentConversationIdRef.current = currentConversationId;
+  const [currentConversationTitle, setCurrentConversationTitle] = useState('Nova conversa');
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isOpeningConversation, setIsOpeningConversation] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [isVoiceCallActive, setIsVoiceCallActive] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -164,21 +199,22 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
   function messagesToApiPayload(history: Message[]): ChatApiMessage[] {
     return history
       .filter((m) => (m.text ?? '').trim().length > 0)
+      .filter((m) => !(m.id === 'welcome' && m.sender === 'kiki'))
       .map((m) => ({
         role: m.sender === 'user' ? 'user' : 'assistant',
         content: m.text,
       }));
   }
 
-  function nextMessageId(history: Message[]): number {
-    return history.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+  function nextMessageId(): string {
+    return `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
   useEffect(() => {
     const delay = WELCOME_MESSAGE_FULL.length * TYPING_SPEED_MS + 200;
     const timer = window.setTimeout(() => {
       setMessages((prev) =>
-        prev.map((m) => (m.id === 1 ? { ...m, streamingPhase: undefined } : m)),
+        prev.map((m) => (m.id === 'welcome' ? { ...m, streamingPhase: undefined } : m)),
       );
     }, delay);
     return () => window.clearTimeout(timer);
@@ -198,6 +234,60 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
     { icon: CheckCircle2, label: 'Planejar semana', color: 'bg-pink-100 text-pink-600' },
   ];
 
+  const loadConversationList = useCallback(async () => {
+    setIsLoadingHistory(true);
+    setHistoryError(null);
+    try {
+      const nextConversations = await fetchChatConversations();
+      setConversations(nextConversations);
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : 'Não foi possível carregar o histórico.');
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadConversationList();
+  }, [loadConversationList]);
+
+  const startNewConversation = useCallback(() => {
+    setCurrentConversationId(null);
+    setCurrentConversationTitle('Nova conversa');
+    setMessages([createWelcomeMessage()]);
+    setInputValue('');
+    setSendError(null);
+    setIsHistoryOpen(false);
+  }, []);
+
+  const openHistory = () => {
+    setIsHistoryOpen(true);
+    void loadConversationList();
+  };
+
+  const openConversation = useCallback(async (conversationId: string) => {
+    if (isSending) return;
+    setIsOpeningConversation(conversationId);
+    setHistoryError(null);
+    try {
+      const conversation = await fetchChatConversation(conversationId);
+      setCurrentConversationId(conversation.id);
+      setCurrentConversationTitle(conversation.title);
+      setMessages(conversation.messages.map(historyMessageToMessage));
+      setInputValue('');
+      setSendError(null);
+      setIsHistoryOpen(false);
+      setConversations((prev) => {
+        const rest = prev.filter((item) => item.id !== conversation.id);
+        return [conversation, ...rest];
+      });
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : 'Não foi possível abrir a conversa.');
+    } finally {
+      setIsOpeningConversation(null);
+    }
+  }, [isSending]);
+
   const clearMaxRecordingTimer = useCallback(() => {
     if (maxRecordingTimerRef.current != null) {
       window.clearTimeout(maxRecordingTimerRef.current);
@@ -212,7 +302,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
 
       const base = messagesRef.current;
       const userMessage: Message = {
-        id: nextMessageId(base),
+        id: nextMessageId(),
         text: trimmed,
         sender: 'user',
         timestamp: new Date(),
@@ -226,7 +316,7 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
       setSendError(null);
       setIsSending(true);
 
-      const kikiId = nextMessageId(transcript);
+      const kikiId = nextMessageId();
 
       setMessages([
         ...transcript,
@@ -239,49 +329,69 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
         },
       ]);
 
-      let sawDelta = false;
-
-      await streamChat(apiMessages, {
-        onDelta: (delta) => {
-          if (!sawDelta) sawDelta = true;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === kikiId
-                ? {
-                    ...m,
-                    text: (m.text ?? '') + delta,
-                    streamingPhase: 'typing' as const,
-                  }
-                : m,
-            ),
-          );
+      await streamChat(
+        apiMessages,
+        {
+          onDelta: (delta) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === kikiId
+                  ? {
+                      ...m,
+                      text: (m.text ?? '') + delta,
+                      streamingPhase: 'typing' as const,
+                    }
+                  : m,
+              ),
+            );
+          },
+          onMeta: (meta) => {
+            setCurrentConversationId(meta.conversationId);
+            setCurrentConversationTitle(meta.title);
+            setConversations((prev) => {
+              const now = new Date();
+              const next: ChatConversation = {
+                id: meta.conversationId,
+                title: meta.title,
+                summary: meta.summary ?? null,
+                createdAt: now,
+                updatedAt: now,
+                messageCount: Math.max(2, transcript.length + 1),
+                latestMessagePreview: messagesRef.current.find((m) => m.id === kikiId)?.text ?? null,
+              };
+              const rest = prev.filter((item) => item.id !== meta.conversationId);
+              return [next, ...rest];
+            });
+            void loadConversationList();
+          },
+          onDone: (interrupted) => {
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id !== kikiId) return m;
+                const finalText = m.text.trim() || '(Sem texto na resposta.)';
+                return { ...m, text: finalText };
+              }),
+            );
+            if (interrupted) {
+              setSendError('Conexão instável: a resposta pode estar incompleta. Envie de novo se precisar.');
+            }
+            setIsSending(false);
+          },
+          onError: (msg) => {
+            setMessages((prev) => prev.filter((m) => m.id !== kikiId));
+            const fallback = 'Não foi possível obter resposta da Kiki.';
+            if (msg.includes('sessão') || msg.includes('login')) {
+              setSendError(msg);
+            } else {
+              setSendError(msg || fallback);
+            }
+            setIsSending(false);
+          },
         },
-        onDone: (interrupted) => {
-          setMessages((prev) =>
-            prev.map((m) => {
-              if (m.id !== kikiId) return m;
-              const finalText = m.text.trim() || '(Sem texto na resposta.)';
-              return { ...m, text: finalText };
-            }),
-          );
-          if (interrupted) {
-            setSendError('Conexão instável: a resposta pode estar incompleta. Envie de novo se precisar.');
-          }
-          setIsSending(false);
-        },
-        onError: (msg) => {
-          setMessages((prev) => prev.filter((m) => m.id !== kikiId));
-          const fallback = 'Não foi possível obter resposta da Kiki.';
-          if (msg.includes('sessão') || msg.includes('login')) {
-            setSendError(msg);
-          } else {
-            setSendError(msg || fallback);
-          }
-          setIsSending(false);
-        },
-      });
+        { conversationId: currentConversationIdRef.current },
+      );
     },
-    [isSending],
+    [isSending, loadConversationList],
   );
 
   const handleSend = async () => {
@@ -737,9 +847,29 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
-          <div>
-            <h2 className="text-base mb-0">KIKI</h2>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base mb-0 truncate">{currentConversationId ? currentConversationTitle : 'KIKI'}</h2>
             <p className="text-xs text-muted-foreground">Assistente Pessoal</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={startNewConversation}
+              disabled={isSending}
+              title="Nova conversa"
+              className="w-9 h-9 rounded-xl hover:bg-muted flex items-center justify-center btn-apple disabled:opacity-40"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={openHistory}
+              title="Histórico de chats"
+              className="h-9 rounded-xl border border-border bg-card px-3 text-xs font-medium hover:bg-muted flex items-center gap-1.5 btn-apple"
+            >
+              <History className="w-4 h-4" />
+              Histórico
+            </button>
           </div>
         </div>
       </div>
@@ -924,6 +1054,99 @@ export function ChatScreen({ onOpenMenu, onNavigateToProfile, onNavigateToHome, 
         </div>
       </div>
       </div>
+      {isHistoryOpen && (
+        <div className="fixed inset-0 z-30 bg-black/30" role="presentation" onClick={() => setIsHistoryOpen(false)}>
+          <div
+            className="ml-auto flex h-full w-full max-w-[380px] flex-col border-l border-border bg-background shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Histórico de chats"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="shrink-0 border-b border-border px-5 pb-3 pt-6">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-semibold">Chats anteriores</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsHistoryOpen(false)}
+                  className="w-10 h-10 rounded-xl hover:bg-muted flex items-center justify-center btn-apple"
+                  title="Fechar histórico"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={startNewConversation}
+                disabled={isSending}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 px-4 py-2.5 text-sm font-medium text-white shadow-md btn-apple-gradient disabled:opacity-40"
+              >
+                <Plus className="h-4 w-4" />
+                Nova conversa
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+              {historyError && (
+                <p className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {historyError}
+                </p>
+              )}
+
+              {isLoadingHistory && conversations.length === 0 ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Carregando histórico...
+                </div>
+              ) : conversations.length === 0 ? (
+                <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                    <MessageCircle className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm font-medium">Nenhum chat salvo ainda</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {conversations.map((conversation) => {
+                    const isActive = conversation.id === currentConversationId;
+                    const isOpening = conversation.id === isOpeningConversation;
+                    const preview = conversation.summary || conversation.latestMessagePreview || 'Sem resumo ainda.';
+                    return (
+                      <button
+                        key={conversation.id}
+                        type="button"
+                        onClick={() => void openConversation(conversation.id)}
+                        disabled={isSending || isOpeningConversation !== null}
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition-colors disabled:opacity-50 ${
+                          isActive
+                            ? 'border-purple-300 bg-purple-50 text-purple-950'
+                            : 'border-border bg-card hover:bg-muted'
+                        }`}
+                      >
+                        <div className="mb-1 flex items-start justify-between gap-3">
+                          <p className="line-clamp-2 text-sm font-medium leading-snug">{conversation.title}</p>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {formatConversationDate(conversation.updatedAt)}
+                          </span>
+                        </div>
+                        <p className="line-clamp-2 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
+                          {preview}
+                        </p>
+                        <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+                          <span>{conversation.messageCount} mensagens</span>
+                          {isOpening && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -20,6 +21,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
+    conversation_id: str | None = None
 
     @model_validator(mode="after")
     def non_empty_last_from_user(self) -> ChatRequest:
@@ -32,7 +34,31 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+    conversation_id: str | None = None
+    title: str | None = None
+    summary: str | None = None
 
 
 class TranscribeResponse(BaseModel):
     text: str
+
+
+class ChatHistoryMessageResponse(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: datetime
+
+
+class ChatConversationResponse(BaseModel):
+    id: str
+    title: str
+    summary: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+    latest_message_preview: str | None = None
+
+
+class ChatConversationDetailResponse(ChatConversationResponse):
+    messages: list[ChatHistoryMessageResponse]
