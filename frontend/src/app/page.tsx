@@ -1,83 +1,88 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { Card, Hero, PageShell, SectionHeader } from './public-site/components';
-import { features, homeHighlights, steps } from './public-site/data';
+import { Bot, Calendar, MessageCircle } from 'lucide-react';
+import {
+  AgentDoctorMockup,
+  CalendarMockup,
+  ChatMockup,
+  FeatureSection,
+  PageCta,
+  PageShell,
+} from './public-site/components';
+import { IntroSequence } from './public-site/IntroSequence';
+import {
+  defaultOgImage,
+  organizationJsonLd,
+  softwareApplicationJsonLd,
+  StructuredData,
+  websiteJsonLd,
+} from './public-site/seo';
 
 export const dynamic = 'force-static';
 
 export const metadata: Metadata = {
+  title: 'Assistente pessoal com IA para organizar sua rotina',
+  description:
+    'Conheça a Kiki, assistente pessoal com IA para organizar agenda, tarefas, lembretes, notas e agentes que pesquisam por você em segundo plano.',
   alternates: { canonical: '/' },
+  openGraph: {
+    title: 'Kiki | Assistente pessoal com IA para organizar sua rotina',
+    description: 'Organize agenda, tarefas, lembretes e notas com uma assistente pessoal inteligente.',
+    url: '/',
+    images: [{ url: defaultOgImage, width: 1200, height: 630, alt: 'Kiki assistente pessoal com IA' }],
+  },
+  twitter: {
+    title: 'Kiki | Assistente pessoal com IA para organizar sua rotina',
+    description: 'Organize agenda, tarefas, lembretes e notas com uma assistente pessoal inteligente.',
+    images: [defaultOgImage],
+  },
 };
 
 export default function HomePage() {
   return (
     <PageShell>
+      <StructuredData data={[organizationJsonLd(), websiteJsonLd(), softwareApplicationJsonLd()]} />
+      <IntroSequence
+        slides={[
+          {
+            eyebrow: 'Kiki',
+            title: 'O assistente de IA',
+            gradient: 'que trabalha por você.',
+          },
+        ]}
+      />
       <main>
-        <Hero />
-
-        <section className="py-12 md:py-20 px-4 md:px-6 bg-gray-50">
-          <SectionHeader
-            eyebrow="Organização inteligente"
-            title="Uma rotina mais clara começa com menos coisas soltas"
-            description="A Kiki centraliza compromissos, tarefas e lembretes em uma experiência simples para consultar todos os dias."
-          />
-          <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-5 md:gap-6">
-            {homeHighlights.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Card key={item.title}>
-                  <Icon className="w-9 h-9 text-purple-600 mb-4" aria-hidden="true" />
-                  <h2 className="text-xl font-bold mb-2 text-gray-900">{item.title}</h2>
-                  <p className="text-sm md:text-base text-gray-600 leading-relaxed">{item.description}</p>
-                </Card>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="py-12 md:py-20 px-4 md:px-6">
-          <SectionHeader
-            eyebrow="Recursos"
-            title="Feita para organizar seu dia sem complicar"
-            description="Os principais recursos ficam prontos para indexação, leitura rápida e navegação direta."
-          />
-          <div className="max-w-6xl mx-auto grid sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
-            {features.slice(0, 6).map((feature) => {
-              const Icon = feature.icon;
-              return (
-                <Card key={feature.title}>
-                  <Icon className="w-8 h-8 text-purple-600 mb-4" aria-hidden="true" />
-                  <h2 className="text-lg md:text-xl font-bold mb-2 text-gray-900">{feature.title}</h2>
-                  <p className="text-sm md:text-base text-gray-600 leading-relaxed">{feature.description}</p>
-                </Card>
-              );
-            })}
-          </div>
-          <div className="text-center mt-8">
-            <Link href="/recursos" className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-gray-100 text-gray-900 font-medium hover:bg-gray-200 transition-colors">
-              Ver todos os recursos
-            </Link>
-          </div>
-        </section>
-
-        <section className="py-12 md:py-20 px-4 md:px-6 bg-gray-50">
-          <SectionHeader
-            eyebrow="Como funciona"
-            title="Da conversa à rotina organizada"
-            description="Uma jornada simples para transformar demandas soltas em ações acompanháveis."
-          />
-          <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-5 md:gap-6">
-            {steps.map((step, index) => (
-              <Card key={step.title}>
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-purple-100 text-purple-700 font-bold mb-4">
-                  {index + 1}
-                </span>
-                <h2 className="text-xl font-bold mb-2 text-gray-900">{step.title}</h2>
-                <p className="text-sm md:text-base text-gray-600 leading-relaxed">{step.description}</p>
-              </Card>
-            ))}
-          </div>
-        </section>
+        <FeatureSection
+          eyebrow={<><Bot className="w-4 h-4" aria-hidden="true" /> Assistentes autônomos</>}
+          headline={<>Assistentes que trabalham<br />enquanto você descansa.</>}
+          body="Diga o que precisa em linguagem natural. Os assistentes da Kiki saem em campo, pesquisam em múltiplas fontes e entregam o resultado pronto, sem você levantar um dedo."
+          ctaHref="/agentes"
+          ctaLabel="Conhecer todos os assistentes"
+          mockup={<AgentDoctorMockup />}
+          mockupBg="from-purple-100 via-violet-100 to-blue-100"
+        />
+        <FeatureSection
+          reverse
+          eyebrow={<><Calendar className="w-4 h-4" aria-hidden="true" /> Agenda inteligente</>}
+          headline={<>Seu mundo<br />organizado.</>}
+          body="Conecte sua agenda, reorganize reuniões com um comando e bloqueie tempo focado. Kiki entende seu calendário e agenda por você."
+          ctaHref="/como-funciona"
+          ctaLabel="Ver como funciona"
+          mockup={<CalendarMockup />}
+          mockupBg="from-blue-100 via-sky-50 to-indigo-100"
+        />
+        <FeatureSection
+          eyebrow={<><MessageCircle className="w-4 h-4" aria-hidden="true" /> Chat com IA</>}
+          headline={<>É só mostrar<br />e falar.</>}
+          body="Converse por texto ou voz. Kiki entende contexto, aprende suas preferências e responde com informações visuais em tempo real."
+          ctaHref="/cadastro"
+          ctaLabel="Começar grátis"
+          mockup={<ChatMockup />}
+          mockupBg="from-pink-100 via-rose-50 to-purple-100"
+        />
+        <PageCta
+          title={<>Pronto para ter<br />um assistente de verdade?</>}
+          description="Cadastro grátis, sem cartão de crédito."
+        />
       </main>
     </PageShell>
   );

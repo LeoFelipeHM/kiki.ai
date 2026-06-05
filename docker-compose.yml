@@ -84,6 +84,19 @@ services:
       - db
     restart: unless-stopped
 
+  frontend-public:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.public
+    image: kiki-frontend-public:latest
+    container_name: kiki-frontend-public
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+      - db
+    restart: unless-stopped
+
   db:
     image: pgvector/pgvector:pg17
     container_name: kiki-db

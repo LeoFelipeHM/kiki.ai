@@ -6,6 +6,7 @@ import { Card, PageShell, SectionHeader } from '../public-site/components';
 import { BlogListMetrics, BlogPostClickTracker } from './BlogMetricsTracker';
 import { getPublishedPosts } from './blog-store';
 import { estimateReadingTime, formatDate } from './blog-utils';
+import { defaultOgImage } from '../public-site/seo';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +18,12 @@ export const metadata: Metadata = {
     title: 'Blog da Kiki',
     description: 'Conteúdos sobre organização, produtividade e IA pessoal.',
     url: '/blog',
+    images: [{ url: defaultOgImage, width: 1200, height: 630, alt: 'Blog da Kiki' }],
   },
   twitter: {
     title: 'Blog da Kiki',
     description: 'Conteúdos sobre organização, produtividade e IA pessoal.',
+    images: [defaultOgImage],
   },
 };
 
@@ -30,14 +33,14 @@ export default async function BlogPage() {
   return (
     <PageShell>
       <BlogListMetrics />
-      <main className="pt-24 md:pt-32 pb-16 bg-white">
+      <main className="pt-24 md:pt-32 pb-16 bg-white public-detail-surface">
         <SectionHeader
           eyebrow="Blog"
           title="Ideias para uma rotina mais leve"
           description="Conteúdos práticos sobre organização, produtividade e formas inteligentes de cuidar do dia a dia."
         />
 
-        <section className="max-w-6xl mx-auto px-4 md:px-6">
+        <section className="max-w-6xl mx-auto px-4 md:px-6 public-fade-up">
           {posts.length === 0 ? (
             <div className="rounded-3xl border border-gray-200 bg-gray-50 p-8 text-center">
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Nenhum artigo publicado ainda</h2>

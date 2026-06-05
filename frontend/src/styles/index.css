@@ -6,7 +6,231 @@
 html,
 body {
   height: 100%;
+  scroll-behavior: smooth;
 }
 #root {
   height: 100%;
+}
+
+.public-page-transition {
+  animation: public-page-enter 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.public-fade-up {
+  animation: public-fade-up 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.public-scale-in {
+  animation: public-scale-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.public-card-motion {
+  animation: public-fade-up 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform: translateZ(0);
+  transition-duration: 520ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.public-card-motion:hover {
+  transform: translateY(-3px);
+}
+
+.public-screen-section {
+  view-transition-name: public-screen;
+}
+
+.public-snap-container {
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+}
+
+.public-snap-slide {
+  scroll-snap-align: start;
+}
+
+.public-hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.public-hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.public-agent-marquee {
+  animation: public-agent-marquee 38s linear infinite;
+}
+
+.public-agent-marquee:hover {
+  animation-duration: 56s;
+}
+
+.public-carousel-fade {
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+@keyframes public-agent-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(calc(-50% - 0.5rem), 0, 0);
+  }
+}
+
+.public-dark-splash {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(126, 34, 206, 0.28), transparent 34rem),
+    radial-gradient(circle at 76% 62%, rgba(219, 39, 119, 0.22), transparent 30rem),
+    radial-gradient(circle at 48% 84%, rgba(79, 70, 229, 0.18), transparent 24rem),
+    #0a0514;
+  overflow: hidden;
+}
+
+.public-dark-splash::before,
+.public-dark-splash::after {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.22) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(244, 114, 182, 0.2) 0 1px, transparent 1.5px);
+  background-position:
+    0 0,
+    42px 28px;
+  background-size:
+    94px 94px,
+    132px 132px;
+  opacity: 0.22;
+  animation: public-particle-drift 22s linear infinite;
+}
+
+.public-dark-splash::after {
+  opacity: 0.14;
+  filter: blur(1px);
+  animation-duration: 34s;
+  animation-direction: reverse;
+}
+
+.public-dark-splash > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes public-particle-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(80px, -80px, 0);
+  }
+}
+
+@keyframes public-page-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes public-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes public-scale-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.public-detail-surface {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.public-detail-surface::before,
+.public-detail-surface::after {
+  content: '';
+  position: absolute;
+  inset: auto;
+  z-index: 0;
+  pointer-events: none;
+  width: min(46rem, 88vw);
+  height: min(46rem, 88vw);
+  border-radius: 9999px;
+  filter: blur(72px);
+  opacity: 0.22;
+  transform: translate3d(0, 0, 0);
+  animation: public-soft-glow 14s ease-in-out infinite alternate;
+}
+
+.public-detail-surface::before {
+  top: -18rem;
+  right: -18rem;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.42), rgba(236, 72, 153, 0.14) 44%, transparent 70%);
+}
+
+.public-detail-surface::after {
+  bottom: -20rem;
+  left: -18rem;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.26), rgba(168, 85, 247, 0.12) 48%, transparent 72%);
+  animation-delay: -5s;
+}
+
+.public-detail-surface > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes public-soft-glow {
+  from {
+    opacity: 0.14;
+    transform: translate3d(-10px, 8px, 0) scale(0.98);
+  }
+  to {
+    opacity: 0.26;
+    transform: translate3d(10px, -8px, 0) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body {
+    scroll-behavior: auto;
+  }
+
+  .public-page-transition,
+  .public-fade-up,
+  .public-scale-in,
+  .public-card-motion,
+  .public-agent-marquee,
+  .public-dark-splash::before,
+  .public-dark-splash::after,
+  .public-detail-surface::before,
+  .public-detail-surface::after {
+    animation: none;
+  }
+
+  .public-card-motion:hover {
+    transform: none;
+  }
 }

@@ -8,6 +8,7 @@ import { BlogContent } from '../BlogContent';
 import { BlogArticleMetrics } from '../BlogMetricsTracker';
 import { getPostBySlug, getPublishedPosts } from '../blog-store';
 import { estimateReadingTime, formatDate } from '../blog-utils';
+import { absoluteUrl, defaultOgImage, StructuredData } from '../../public-site/seo';
 
 type BlogPostPageProps = {
   params: Promise<{ slug: string }>;
@@ -37,10 +38,19 @@ export async function generateMetadata({ params }: BlogPostPageProps): Promise<M
       publishedTime: post.publishedAt,
       authors: [post.author],
       tags: post.tags,
+      images: [
+        {
+          url: post.coverImage || defaultOgImage,
+          width: 1200,
+          height: 630,
+          alt: post.title,
+        },
+      ],
     },
     twitter: {
       title: post.title,
       description: post.summary,
+      images: [post.coverImage || defaultOgImage],
     },
   };
 }
@@ -58,9 +68,34 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
 
   return (
     <PageShell>
+      <StructuredData
+        data={{
+          '@context': 'https://schema.org',
+          '@type': 'Article',
+          headline: post.title,
+          description: post.summary,
+          image: absoluteUrl(post.coverImage || defaultOgImage),
+          datePublished: post.publishedAt,
+          dateModified: post.updatedAt,
+          author: {
+            '@type': 'Organization',
+            name: post.author,
+          },
+          publisher: {
+            '@type': 'Organization',
+            name: 'Kiki',
+            logo: {
+              '@type': 'ImageObject',
+              url: absoluteUrl('/apple-touch-icon.png'),
+            },
+          },
+          mainEntityOfPage: absoluteUrl(`/blog/${post.slug}`),
+          keywords: post.tags.join(', '),
+        }}
+      />
       <BlogArticleMetrics postId={post.id} slug={post.slug} />
-      <main className="pt-24 md:pt-32 pb-16 bg-white">
-        <article className="max-w-3xl mx-auto px-4 md:px-6">
+      <main className="public-detail-surface pt-24 md:pt-32 pb-16 bg-white">
+        <article className="max-w-3xl mx-auto px-4 md:px-6 public-fade-up">
           <Link href="/blog" className="inline-flex items-center gap-2 text-sm font-semibold text-purple-700 hover:text-pink-600 mb-8">
             <ArrowLeft className="w-4 h-4" aria-hidden="true" />
             Voltar para o blog

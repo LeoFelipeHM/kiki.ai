@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import { Inter } from 'next/font/google';
 import '../styles/index.css';
+import { defaultOgImage, siteUrl } from './public-site/seo';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -9,17 +10,15 @@ const inter = Inter({
   preload: true,
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://heykiki.com.br';
-
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   applicationName: 'Kiki',
   title: {
-    default: 'Kiki | Menos caos, mais clareza',
+    default: 'Kiki | Assistente pessoal com IA para organizar sua rotina',
     template: '%s | Kiki',
   },
   description:
-    'Kiki organiza compromissos, tarefas e lembretes para deixar seu dia mais leve, claro e eficiente.',
+    'Kiki é uma assistente pessoal com IA que organiza agenda, tarefas, lembretes, notas e agentes autônomos para deixar sua rotina mais clara.',
   alternates: {
     canonical: '/',
   },
@@ -28,24 +27,24 @@ export const metadata: Metadata = {
     locale: 'pt_BR',
     url: '/',
     siteName: 'Kiki',
-    title: 'Kiki | Menos caos, mais clareza',
+    title: 'Kiki | Assistente pessoal com IA para organizar sua rotina',
     description:
-      'Organize compromissos, tarefas e lembretes com uma assistente pessoal inteligente.',
+      'Organize compromissos, tarefas, lembretes e notas com uma assistente pessoal inteligente.',
     images: [
       {
-        url: '/apple-touch-icon.png',
-        width: 180,
-        height: 180,
-        alt: 'Kiki',
+        url: defaultOgImage,
+        width: 1200,
+        height: 630,
+        alt: 'Kiki - assistente pessoal com IA para organizar sua rotina',
       },
     ],
   },
   twitter: {
-    card: 'summary',
-    title: 'Kiki | Menos caos, mais clareza',
+    card: 'summary_large_image',
+    title: 'Kiki | Assistente pessoal com IA para organizar sua rotina',
     description:
       'Organize compromissos, tarefas e lembretes com uma assistente pessoal inteligente.',
-    images: ['/apple-touch-icon.png'],
+    images: [defaultOgImage],
   },
   icons: {
     icon: [

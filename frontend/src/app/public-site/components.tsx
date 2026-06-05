@@ -1,39 +1,62 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { ArrowRight, Check, Menu, Star } from 'lucide-react';
+import {
+  ArrowRight,
+  Bot,
+  Calendar,
+  Check,
+  CheckCircle2,
+  Loader2,
+  MessageCircle,
+  Sparkles,
+  Star,
+  Stethoscope,
+} from 'lucide-react';
 import { dashboardRoutes, publicRoutes } from './routes';
+
+const footerProductLinks: Array<[string, string]> = publicRoutes
+  .filter((route) => ['/agentes', '/recursos', '/como-funciona', '/precos'].includes(route.href))
+  .map((route) => [route.label, route.href]);
+
+const footerCompanyLinks: Array<[string, string]> = [
+  ['Blog', '/blog'],
+  ['Contato', '/'],
+];
+
+const footerLegalLinks: Array<[string, string]> = publicRoutes
+  .filter((route) => ['/privacidade', '/termos', '/seguranca'].includes(route.href))
+  .map((route) => [route.label, route.href]);
 
 export function Header() {
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white/85 backdrop-blur-xl border-b border-gray-100">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <Image
-              src="/favicon.svg"
-              alt=""
-              width={32}
-              height={32}
-              priority
-              className="h-8 w-8 rounded-lg object-contain shrink-0"
-            />
-            <span className="text-xl font-semibold text-gray-900">Kiki</span>
-          </Link>
+        <div className="flex items-center justify-between h-16 md:grid md:grid-cols-[1fr_auto_1fr] md:gap-6">
+          <div className="md:flex md:justify-start">
+            <BrandLogo href="/" />
+          </div>
 
           <nav className="hidden md:flex items-center gap-1" aria-label="Navegação principal">
-            {publicRoutes.slice(1, 5).map((route) => (
-              <Link
-                key={route.href}
-                href={route.href}
-                className="px-4 py-2 text-sm rounded-lg text-gray-700 hover:text-gray-900 hover:bg-gray-50 transition-colors"
-              >
-                {route.label}
-              </Link>
-            ))}
+            {publicRoutes.slice(1, 5).map((route) => {
+              const isAgents = route.href === '/agentes';
+              return (
+                <Link
+                  key={route.href}
+                  href={route.href}
+                  className={`px-4 py-2 text-sm rounded-lg transition-colors flex items-center gap-1.5 ${
+                    isAgents
+                      ? 'text-purple-600 hover:bg-purple-50'
+                      : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  {isAgents ? <Bot className="w-3.5 h-3.5" aria-hidden="true" /> : null}
+                  {route.label}
+                </Link>
+              );
+            })}
           </nav>
 
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden md:flex items-center justify-end gap-3">
             <Link
               href={dashboardRoutes.login}
               className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 rounded-lg hover:bg-gray-50 transition-colors"
@@ -50,17 +73,33 @@ export function Header() {
 
           <details className="md:hidden relative">
             <summary className="list-none p-2 text-gray-700 hover:bg-gray-50 rounded-lg cursor-pointer">
-              <Menu className="w-5 h-5" aria-hidden="true" />
+              <span className="block h-5 w-5" aria-hidden="true">
+                <span className="my-1 block h-0.5 w-5 rounded-full bg-current" />
+                <span className="my-1 block h-0.5 w-5 rounded-full bg-current" />
+                <span className="my-1 block h-0.5 w-5 rounded-full bg-current" />
+              </span>
               <span className="sr-only">Abrir menu</span>
             </summary>
-            <nav className="absolute right-0 mt-3 w-56 rounded-2xl border border-gray-100 bg-white p-3 shadow-xl">
-              {publicRoutes.slice(1).map((route) => (
-                <Link key={route.href} href={route.href} className="block px-4 py-3 text-sm text-gray-700 rounded-xl hover:bg-gray-50">
+            <nav className="absolute right-0 mt-3 w-56 rounded-2xl border border-gray-100 bg-white p-3 shadow-xl public-scale-in">
+              {publicRoutes.slice(1, 5).map((route) => (
+                <Link
+                  key={route.href}
+                  href={route.href}
+                  className={`flex items-center gap-2 px-4 py-3 text-sm rounded-xl ${
+                    route.href === '/agentes'
+                      ? 'text-purple-600 hover:bg-purple-50'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {route.href === '/agentes' ? <Bot className="w-4 h-4" aria-hidden="true" /> : null}
                   {route.label}
                 </Link>
               ))}
-              <Link href={dashboardRoutes.login} className="block px-4 py-3 text-sm text-purple-700 rounded-xl hover:bg-purple-50">
+              <Link href={dashboardRoutes.login} className="block px-4 py-3 text-sm text-gray-700 rounded-xl hover:bg-gray-50">
                 Entrar
+              </Link>
+              <Link href="/cadastro" className="block px-4 py-3 text-sm text-purple-700 rounded-xl hover:bg-purple-50">
+                Começar grátis
               </Link>
             </nav>
           </details>
@@ -76,15 +115,12 @@ export function Footer() {
       <div className="max-w-6xl mx-auto">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 mb-6 md:mb-8">
           <div className="col-span-2 md:col-span-1">
-            <Link href="/" className="flex items-center gap-3 mb-4 hover:opacity-80 transition-opacity">
-              <Image src="/favicon.svg" alt="" width={32} height={32} className="h-8 w-8 rounded-lg object-contain" />
-              <span className="text-xl font-semibold text-gray-900">Kiki</span>
-            </Link>
-            <p className="text-sm text-gray-600">Seu assistente pessoal inteligente.</p>
+            <BrandLogo href="/" className="mb-3 md:mb-4" />
+            <p className="text-xs md:text-sm text-gray-600">Seu assistente pessoal inteligente</p>
           </div>
-          <FooterGroup title="Produto" links={[['Recursos', '/recursos'], ['Preços', '/precos'], ['Como funciona', '/como-funciona']]} />
-          <FooterGroup title="Conta" links={[['Começar grátis', '/cadastro'], ['Entrar', '/login']]} />
-          <FooterGroup title="Legal" links={[['Privacidade', '/'], ['Termos', '/'], ['Segurança', '/']]} />
+          <FooterGroup title="Produto" links={footerProductLinks} highlightFirst />
+          <FooterGroup title="Empresa" links={footerCompanyLinks} />
+          <FooterGroup title="Legal" links={footerLegalLinks} />
         </div>
         <div className="pt-6 md:pt-8 border-t border-gray-100 text-center">
           <p className="text-xs md:text-sm text-gray-600">© 2026 Kiki. Todos os direitos reservados.</p>
@@ -94,14 +130,36 @@ export function Footer() {
   );
 }
 
-function FooterGroup({ title, links }: { title: string; links: Array<[string, string]> }) {
+export function BrandLogo({ href, className = '' }: { href: string; className?: string }) {
+  return (
+    <Link href={href} className={`flex items-center gap-2 md:gap-3 hover:opacity-80 transition-opacity ${className}`}>
+      <span className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
+        <Sparkles className="w-4 h-4 md:w-5 md:h-5 text-white" aria-hidden="true" />
+      </span>
+      <span className="text-lg md:text-xl font-semibold text-gray-900">Kiki</span>
+    </Link>
+  );
+}
+
+function FooterGroup({
+  title,
+  links,
+  highlightFirst = false,
+}: {
+  title: string;
+  links: Array<[string, string]>;
+  highlightFirst?: boolean;
+}) {
   return (
     <div>
-      <h2 className="text-base font-semibold mb-3 text-gray-900">{title}</h2>
-      <ul className="space-y-2 text-sm text-gray-600">
-        {links.map(([label, href]) => (
+      <h2 className="text-sm md:text-base font-semibold mb-2 md:mb-3 text-gray-900">{title}</h2>
+      <ul className="space-y-1.5 md:space-y-2 text-xs md:text-sm text-gray-600">
+        {links.map(([label, href], index) => (
           <li key={label}>
-            <Link href={href} className="hover:text-gray-900">
+            <Link
+              href={href}
+              className={highlightFirst && index === 0 ? 'hover:text-purple-600 text-purple-600 font-medium' : 'hover:text-gray-900'}
+            >
               {label}
             </Link>
           </li>
@@ -115,7 +173,7 @@ export function PageShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-white text-gray-900">
       <Header />
-      {children}
+      <div className="public-page-transition">{children}</div>
       <Footer />
     </div>
   );
@@ -124,27 +182,36 @@ export function PageShell({ children }: { children: ReactNode }) {
 export function Hero() {
   return (
     <section className="pt-24 md:pt-32 pb-12 md:pb-16 px-4 md:px-6">
-      <div className="max-w-4xl mx-auto text-center">
+      <div className="max-w-4xl mx-auto text-center public-fade-up">
         <div className="inline-flex items-center gap-2 px-3 md:px-4 py-1.5 bg-purple-50 rounded-full mb-4 md:mb-6">
-          <Star className="w-4 h-4 text-purple-600" aria-hidden="true" />
-          <span className="text-xs md:text-sm font-medium text-purple-900">Menos caos, mais clareza</span>
+          <Star className="w-3.5 h-3.5 md:w-4 md:h-4 text-purple-600" aria-hidden="true" />
+          <span className="text-xs md:text-sm font-medium text-purple-900">Organize sua vida com IA</span>
         </div>
-        <h1 className="text-[18px] sm:text-2xl md:text-[32px] lg:text-[40px] font-bold mb-4 md:mb-6 tracking-tight text-gray-900 leading-[1.22] px-2 overflow-visible">
-          <span className="block whitespace-nowrap">Eu organizo sua rotina</span>
-          <span className="block pb-3 bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-clip-text text-transparent leading-[1.22]">
-            de forma inteligente
+
+        <h1 className="text-3xl sm:text-4xl md:text-6xl lg:text-7xl font-bold mb-4 md:mb-6 tracking-tight text-gray-900 leading-[1.1] px-2">
+          Seu assistente pessoal
+          <span className="block bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-clip-text text-transparent">
+            inteligente para o dia a dia
           </span>
         </h1>
+
         <p className="text-base md:text-lg lg:text-xl text-gray-600 mb-8 md:mb-12 max-w-2xl mx-auto leading-relaxed px-4">
-          Olá, eu sou a Kiki. Cuido dos seus compromissos, tarefas e lembretes para deixar seu dia mais leve e organizado.
+          Kiki aprende com você, gerencia sua agenda e conta com agentes que trabalham em segundo plano: pesquisando,
+          comparando e descobrindo tudo que você precisa.
         </p>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-4">
-          <Link href="/cadastro" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3 text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-full font-medium hover:shadow-lg transition-all">
+
+        <div className="flex flex-col sm:flex-row gap-3 justify-center px-4">
+          <Link
+            href="/cadastro"
+            className="px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full font-semibold hover:shadow-xl transition-all text-base md:text-lg"
+          >
             Começar grátis
-            <ArrowRight className="w-4 h-4" aria-hidden="true" />
           </Link>
-          <Link href="/recursos" className="w-full sm:w-auto inline-flex items-center justify-center px-7 py-3 text-gray-900 bg-gray-100 rounded-full font-medium hover:bg-gray-200 transition-colors">
-            Ver todos os recursos
+          <Link
+            href="/agentes"
+            className="px-6 md:px-8 py-3 md:py-4 border-2 border-purple-200 text-purple-700 rounded-full font-semibold hover:bg-purple-50 transition-colors text-base md:text-lg flex items-center justify-center gap-2"
+          >
+            <Bot className="w-5 h-5" aria-hidden="true" /> Ver os Agentes
           </Link>
         </div>
       </div>
@@ -152,9 +219,254 @@ export function Hero() {
   );
 }
 
+export function FeatureSection({
+  reverse = false,
+  eyebrow,
+  headline,
+  body,
+  ctaHref,
+  ctaLabel,
+  mockup,
+  mockupBg,
+}: {
+  reverse?: boolean;
+  eyebrow: ReactNode;
+  headline: ReactNode;
+  body: string;
+  ctaHref: string;
+  ctaLabel: string;
+  mockup: ReactNode;
+  mockupBg: string;
+}) {
+  return (
+    <section className="py-20 md:py-28 px-6 bg-white border-b border-gray-100 public-screen-section">
+      <div className={`max-w-6xl mx-auto flex flex-col ${reverse ? 'md:flex-row-reverse' : 'md:flex-row'} items-center gap-12 md:gap-20`}>
+        <div className="flex-1 min-w-0 public-fade-up">
+          <div className="inline-flex items-center gap-2 text-purple-600 mb-5 text-sm font-medium">{eyebrow}</div>
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 leading-[1.1] mb-6">{headline}</h1>
+          <p className="text-gray-500 text-base md:text-lg leading-relaxed mb-8 max-w-md">{body}</p>
+          <Link href={ctaHref} className="inline-flex items-center gap-2 text-gray-900 font-semibold hover:text-purple-600 transition-colors group text-base">
+            {ctaLabel}
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" aria-hidden="true" />
+          </Link>
+        </div>
+
+        <div className="flex-1 w-full min-w-0 public-card-motion">
+          <div className={`rounded-3xl bg-gradient-to-br ${mockupBg} p-6 md:p-10 flex items-center justify-center min-h-[340px]`}>
+            {mockup}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function AgentDoctorMockup() {
+  return (
+    <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg overflow-hidden">
+      <div className="px-5 pt-5 pb-4 border-b border-gray-100">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
+            <Stethoscope className="w-4 h-4 text-white" aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Assistente de saúde</p>
+            <p className="text-sm font-semibold text-gray-900">Buscando cardiologistas</p>
+          </div>
+          <span className="ml-auto flex items-center gap-1 text-xs text-blue-500 bg-blue-50 px-2.5 py-1 rounded-full font-medium">
+            <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" /> Pesquisando
+          </span>
+        </div>
+      </div>
+
+      <div className="px-5 py-4 space-y-3">
+        {[
+          ['Dr. Carlos Mendes', 'Cardiologista · Convênio · 0,8 km', 'Agenda disponível amanhã, 14h'],
+          ['Dra. Ana Figueiredo', 'Cardiologista · Convênio · 1,4 km', 'Agenda disponível hoje, 17h'],
+        ].map(([name, meta, time]) => (
+          <div key={name} className="flex items-start gap-3 p-3 rounded-xl bg-green-50 border border-green-100">
+            <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" aria-hidden="true" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900">{name}</p>
+              <p className="text-xs text-gray-500">{meta}</p>
+              <p className="text-xs text-green-600 font-medium mt-0.5">{time}</p>
+            </div>
+          </div>
+        ))}
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+          <Loader2 className="w-4 h-4 text-blue-400 animate-spin flex-shrink-0" aria-hidden="true" />
+          <p className="text-xs text-gray-400">Verificando mais 4 especialistas...</p>
+        </div>
+      </div>
+
+      <div className="px-5 pb-5">
+        <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-4 py-3">
+          <p className="text-sm text-gray-400 flex-1 italic">"Acha cardiologistas perto de mim com convênio"</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function CalendarMockup() {
+  return (
+    <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg overflow-hidden">
+      <div className="px-5 pt-5 pb-4 border-b border-gray-100 flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center">
+          <Calendar className="w-4 h-4 text-white" aria-hidden="true" />
+        </div>
+        <p className="text-sm font-semibold text-gray-900">Kiki Calendar</p>
+      </div>
+
+      <div className="px-5 py-4 space-y-3">
+        <div className="rounded-xl bg-blue-50 border border-blue-100 p-4">
+          <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Adicionado</p>
+          <p className="text-sm font-bold text-gray-900">Reunião de planejamento Q3</p>
+          <p className="text-xs text-gray-500 mt-0.5">Sex, 6 Jun · 9:00 - 10:30</p>
+        </div>
+        <div className="rounded-xl bg-purple-50 border border-purple-100 p-4">
+          <p className="text-xs font-semibold text-purple-600 uppercase tracking-wide mb-1">Bloqueado</p>
+          <p className="text-sm font-bold text-gray-900">Foco profundo</p>
+          <p className="text-xs text-gray-500 mt-0.5">Sex, 6 Jun · 14:00 - 16:00</p>
+        </div>
+      </div>
+
+      <div className="px-5 pb-5">
+        <div className="bg-gray-100 rounded-xl p-4">
+          <p className="text-xs text-gray-700 leading-relaxed">
+            Adicionei a reunião e bloqueei 2h de foco à tarde para você não ser interrompido.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-3 mt-3">
+          <p className="text-sm text-gray-400 flex-1 italic">"Agenda reunião sexta de manhã e bloqueia minha tarde"</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ChatMockup() {
+  return (
+    <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg overflow-hidden">
+      <div className="px-5 pt-5 pb-4 space-y-3">
+        <div className="flex justify-end">
+          <div className="bg-purple-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 max-w-[80%]">
+            <p className="text-sm">Qual o melhor horário pra eu fazer exercício essa semana?</p>
+          </div>
+        </div>
+        <div className="flex gap-2 items-start">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-white" aria-hidden="true" />
+          </div>
+          <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[80%]">
+            <p className="text-sm text-gray-800">
+              Olhando sua agenda: terça e quinta de manhã estão livres das 7h às 9h.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <div className="bg-purple-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 max-w-[80%]">
+            <p className="text-sm">Bloqueia terça e quinta 7h-8h pra mim então</p>
+          </div>
+        </div>
+        <div className="flex gap-2 items-start">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-white" aria-hidden="true" />
+          </div>
+          <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[80%]">
+            <p className="text-sm text-gray-800 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" aria-hidden="true" /> Pronto! Bloqueados como "Exercício".
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-5 pb-5 flex items-center gap-2 bg-white border-t border-gray-100 pt-4">
+        <div className="flex-1 bg-gray-100 rounded-xl px-4 py-3">
+          <p className="text-sm text-gray-400">Pergunte qualquer coisa...</p>
+        </div>
+        <div className="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center flex-shrink-0">
+          <ArrowRight className="w-4 h-4 text-white" aria-hidden="true" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function DarkSplashSection({
+  eyebrow,
+  children,
+  description,
+}: {
+  eyebrow: string;
+  children: ReactNode;
+  description?: string;
+}) {
+  return (
+    <section className="public-dark-splash min-h-[calc(100vh-64px)] flex items-center justify-center px-8 overflow-hidden">
+      <div className="relative z-10 text-center max-w-4xl mx-auto select-none public-fade-up">
+        <p className="text-white/60 tracking-[0.3em] uppercase mb-6 text-[10px] md:text-sm">{eyebrow}</p>
+        <h1 className="text-white leading-[1.15] text-[clamp(2rem,6vw,5.5rem)] font-bold">{children}</h1>
+        {description ? <p className="text-white/40 mt-6 text-base md:text-lg">{description}</p> : null}
+      </div>
+    </section>
+  );
+}
+
+export function GradientText({ children }: { children: ReactNode }) {
+  return <span className="bg-gradient-to-r from-violet-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent">{children}</span>;
+}
+
+export function StepSlide({ title, desc, detail }: { title: string; desc: string; detail?: string }) {
+  return (
+    <section className="public-dark-splash min-h-[calc(100vh-64px)] flex items-center justify-center px-8 overflow-hidden scroll-mt-16 public-snap-slide">
+      <div className="relative z-10 max-w-2xl w-full text-center select-none public-fade-up">
+        <h2 className="text-white mb-6 leading-tight text-[clamp(2rem,5vw,4rem)] font-bold">{title}</h2>
+        <p className="text-white/60 text-lg leading-relaxed mb-3">{desc}</p>
+        {detail ? <p className="text-white/35 text-sm leading-relaxed">{detail}</p> : null}
+      </div>
+    </section>
+  );
+}
+
+export function PageCta({
+  title,
+  description,
+  href = '/cadastro',
+  label = 'Começar grátis',
+  dark = false,
+}: {
+  title: ReactNode;
+  description: string;
+  href?: string;
+  label?: string;
+  dark?: boolean;
+}) {
+  return (
+    <section className={`py-20 md:py-28 px-6 ${dark ? 'public-dark-splash text-white' : 'bg-white border-t border-gray-100'}`}>
+      <div className="relative z-10 max-w-2xl mx-auto text-center public-fade-up">
+        <h2 className={`text-3xl md:text-5xl font-bold mb-5 leading-tight ${dark ? 'text-white' : 'text-gray-900'}`}>{title}</h2>
+        <p className={`${dark ? 'text-gray-400' : 'text-gray-500'} mb-10 text-base md:text-lg`}>{description}</p>
+        <Link href={href} className="inline-flex px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full font-semibold hover:shadow-xl hover:shadow-purple-900/40 transition-all text-base md:text-lg">
+          {label}
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+export function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="text-center mb-10 md:mb-16 public-fade-up">
+      <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-3 md:mb-4 text-gray-900 px-4">{title}</h2>
+      <p className="text-base md:text-lg text-gray-600">{subtitle}</p>
+    </div>
+  );
+}
+
 export function SectionHeader({ eyebrow, title, description }: { eyebrow?: string; title: string; description: string }) {
   return (
-    <div className="max-w-3xl mx-auto text-center mb-10 md:mb-14 px-4">
+    <div className="max-w-3xl mx-auto text-center mb-10 md:mb-14 px-4 public-fade-up">
       {eyebrow ? <p className="text-sm font-semibold text-purple-700 mb-3">{eyebrow}</p> : null}
       <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 text-gray-900">{title}</h1>
       <p className="text-base md:text-lg text-gray-600 leading-relaxed">{description}</p>
@@ -165,7 +477,7 @@ export function SectionHeader({ eyebrow, title, description }: { eyebrow?: strin
 export function Card({ children, featured = false }: { children: ReactNode; featured?: boolean }) {
   return (
     <article
-      className={`rounded-2xl md:rounded-3xl p-6 md:p-8 bg-white transition-all ${
+      className={`rounded-2xl md:rounded-3xl p-6 md:p-8 bg-white transition-all public-card-motion ${
         featured ? 'border-2 border-purple-600 shadow-lg shadow-purple-600/15' : 'border border-gray-200 shadow-sm'
       }`}
     >
@@ -174,15 +486,40 @@ export function Card({ children, featured = false }: { children: ReactNode; feat
   );
 }
 
-export function CheckList({ items }: { items: readonly string[] }) {
+export function GradientIcon({
+  children,
+  color,
+  className = '',
+}: {
+  children: ReactNode;
+  color: string;
+  className?: string;
+}) {
   return (
-    <ul className="space-y-2 md:space-y-3 text-sm">
+    <div className={`rounded-lg md:rounded-xl bg-gradient-to-br ${color} flex items-center justify-center ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+export function CheckList({ items, featured = false }: { items: readonly string[]; featured?: boolean }) {
+  return (
+    <ul className="space-y-2 md:space-y-3 text-xs md:text-sm">
       {items.map((item) => (
-        <li key={item} className="flex items-center gap-3 text-gray-700">
-          <Check className="w-5 h-5 text-purple-600 flex-shrink-0" aria-hidden="true" />
+        <li key={item} className="flex items-center gap-2 md:gap-3 text-gray-700">
+          <Check className={`w-4 h-4 md:w-5 md:h-5 flex-shrink-0 ${featured ? 'text-purple-600' : 'text-gray-400'}`} aria-hidden="true" />
           {item}
         </li>
       ))}
     </ul>
+  );
+}
+
+export function TextLinkButton({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link href={href} className="text-purple-600 hover:text-purple-700 font-medium text-sm flex items-center gap-2">
+      {children}
+      <ArrowRight className="w-4 h-4" aria-hidden="true" />
+    </Link>
   );
 }

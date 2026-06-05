@@ -3,10 +3,17 @@
 }
 
 www.heykiki.com.br {
+    redir https://heykiki.com.br{uri} permanent
+}
+
+heykiki.com.br {
+    reverse_proxy localhost:3000
+}
+
+app.heykiki.com.br {
     reverse_proxy localhost:5173
 }
 
 api.heykiki.com.br {
     reverse_proxy localhost:8000
 }
-
