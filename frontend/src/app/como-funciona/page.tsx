@@ -47,17 +47,20 @@ export default function ComoFuncionaPage() {
           },
           {
             eyebrow: 'Conta',
-            title: 'Crie sua conta.',
+            title: 'Crie sua conta',
+            gradient: 'em segundos.',
             description: 'Cadastro em segundos, sem cartão de crédito.',
           },
           {
             eyebrow: 'Conversa',
-            title: 'Converse com Kiki.',
+            title: 'Converse com Kiki',
+            gradient: 'do seu jeito.',
             description: 'Conte sobre sua rotina. Kiki aprende e se adapta a você.',
           },
           {
             eyebrow: 'Rotina',
-            title: 'Viva organizado.',
+            title: 'Viva organizado',
+            gradient: 'todos os dias.',
             description: 'Sugestões inteligentes, assistentes trabalhando e tudo sob controle.',
           },
         ]}

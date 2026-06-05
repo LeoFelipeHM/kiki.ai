@@ -35,7 +35,7 @@ export default function AgentesPage() {
           {
             eyebrow: 'Kiki',
             title: 'Assistentes que trabalham',
-            gradient: 'por você em segundo plano.',
+            gradient: 'por você',
           },
           {
             eyebrow: 'Pedido',

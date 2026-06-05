@@ -404,10 +404,10 @@ export function DarkSplashSection({
   description?: string;
 }) {
   return (
-    <section className="public-dark-splash min-h-[calc(100vh-64px)] flex items-center justify-center px-8 overflow-hidden">
-      <div className="relative z-10 text-center max-w-4xl mx-auto select-none public-fade-up">
+    <section className="public-dark-splash flex min-h-screen items-center justify-center overflow-hidden px-6 md:px-8">
+      <div className="relative z-10 mx-auto max-w-4xl text-center select-none public-fade-up">
         <p className="text-white/60 tracking-[0.3em] uppercase mb-6 text-[10px] md:text-sm">{eyebrow}</p>
-        <h1 className="text-white leading-[1.15] text-[clamp(2rem,6vw,5.5rem)] font-bold">{children}</h1>
+        <h1 className="mx-auto grid min-h-[5.2rem] max-w-4xl place-content-center gap-1 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white md:min-h-[8.6rem]">{children}</h1>
         {description ? <p className="text-white/40 mt-6 text-base md:text-lg">{description}</p> : null}
       </div>
     </section>
@@ -420,9 +420,9 @@ export function GradientText({ children }: { children: ReactNode }) {
 
 export function StepSlide({ title, desc, detail }: { title: string; desc: string; detail?: string }) {
   return (
-    <section className="public-dark-splash min-h-[calc(100vh-64px)] flex items-center justify-center px-8 overflow-hidden scroll-mt-16 public-snap-slide">
-      <div className="relative z-10 max-w-2xl w-full text-center select-none public-fade-up">
-        <h2 className="text-white mb-6 leading-tight text-[clamp(2rem,5vw,4rem)] font-bold">{title}</h2>
+    <section className="public-dark-splash public-snap-slide flex min-h-screen scroll-mt-16 items-center justify-center overflow-hidden px-6 md:px-8">
+      <div className="relative z-10 mx-auto w-full max-w-3xl text-center select-none public-fade-up">
+        <h2 className="mx-auto mb-6 grid min-h-[5.2rem] max-w-3xl place-content-center text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white md:min-h-[8.6rem]">{title}</h2>
         <p className="text-white/60 text-lg leading-relaxed mb-3">{desc}</p>
         {detail ? <p className="text-white/35 text-sm leading-relaxed">{detail}</p> : null}
       </div>
@@ -444,7 +444,7 @@ export function PageCta({
   dark?: boolean;
 }) {
   return (
-    <section className={`py-20 md:py-28 px-6 ${dark ? 'public-dark-splash text-white' : 'bg-white border-t border-gray-100'}`}>
+    <section className={`${dark ? 'public-dark-splash flex min-h-screen items-center text-white' : 'bg-white border-t border-gray-100 py-20 md:py-28'} px-6`}>
       <div className="relative z-10 max-w-2xl mx-auto text-center public-fade-up">
         <h2 className={`text-3xl md:text-5xl font-bold mb-5 leading-tight ${dark ? 'text-white' : 'text-gray-900'}`}>{title}</h2>
         <p className={`${dark ? 'text-gray-400' : 'text-gray-500'} mb-10 text-base md:text-lg`}>{description}</p>
