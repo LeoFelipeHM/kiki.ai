@@ -67,6 +67,7 @@ export function IntroSequence({
   }, [dismissed]);
 
   const finish = useCallback(() => {
+    document.documentElement.removeAttribute('data-public-intro-active');
     setLeaving(true);
     if (once && storageKey) {
       try {
