@@ -28,7 +28,7 @@ export const metadata: Metadata = {
 
 export default function AgentesPage() {
   return (
-    <PageShell>
+    <PageShell darkInitial>
       <StructuredData data={breadcrumbJsonLd([{ name: 'Início', path: '/' }, { name: 'Agentes', path: '/agentes' }])} />
       <IntroSequence
         slides={[

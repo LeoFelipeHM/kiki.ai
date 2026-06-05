@@ -170,9 +170,9 @@ function FooterGroup({
   );
 }
 
-export function PageShell({ children }: { children: ReactNode }) {
+export function PageShell({ children, darkInitial = false }: { children: ReactNode; darkInitial?: boolean }) {
   return (
-    <div className="min-h-screen bg-white text-gray-900">
+    <div className={`min-h-screen text-gray-900 ${darkInitial ? 'bg-[#0a0514]' : 'bg-white'}`}>
       <ReactiveHeader />
       <div className="public-page-transition">{children}</div>
       <Footer />

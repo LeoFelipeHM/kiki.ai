@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { Bot } from 'lucide-react';
 import { dashboardRoutes, publicRoutes } from './routes';
 
@@ -12,8 +12,9 @@ const darkIntroRoutes = new Set(['/', '/agentes', '/recursos', '/como-funciona']
 export function ReactiveHeader() {
   const pathname = usePathname();
   const [isAtTop, setIsAtTop] = useState(true);
-  const [isIntroActive, setIsIntroActive] = useState(false);
-  const isDarkTop = darkIntroRoutes.has(pathname) && isAtTop && isIntroActive;
+  const hasDarkIntro = darkIntroRoutes.has(pathname);
+  const [isIntroActive, setIsIntroActive] = useState(hasDarkIntro);
+  const isDarkTop = hasDarkIntro && isAtTop && isIntroActive;
 
   useEffect(() => {
     const update = () => setIsAtTop(window.scrollY < 48);
@@ -22,9 +23,15 @@ export function ReactiveHeader() {
     return () => window.removeEventListener('scroll', update);
   }, [pathname]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (hasDarkIntro) {
+      document.documentElement.removeAttribute('data-public-intro-active');
+      setIsIntroActive(true);
+    }
+
     const update = () => {
-      setIsIntroActive(document.documentElement.dataset.publicIntroActive === 'true');
+      const state = document.documentElement.dataset.publicIntroActive;
+      setIsIntroActive(state === 'true' || (state === undefined && hasDarkIntro));
     };
     const observer = new MutationObserver(update);
 
@@ -35,11 +42,11 @@ export function ReactiveHeader() {
     });
 
     return () => observer.disconnect();
-  }, [pathname]);
+  }, [hasDarkIntro, pathname]);
 
   return (
     <header
-      className={`fixed left-0 right-0 top-0 z-[120] border-b backdrop-blur-xl transition-all duration-300 ${
+      className={`fixed left-0 right-0 top-0 z-[120] border-b backdrop-blur-xl ${
         isDarkTop ? 'border-white/10 bg-transparent' : 'border-gray-100 bg-white/80'
       }`}
     >

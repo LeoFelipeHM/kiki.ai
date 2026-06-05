@@ -34,7 +34,7 @@ const examples = [
 
 export default function ComoFuncionaPage() {
   return (
-    <PageShell>
+    <PageShell darkInitial>
       <StructuredData
         data={breadcrumbJsonLd([{ name: 'Início', path: '/' }, { name: 'Como funciona', path: '/como-funciona' }])}
       />

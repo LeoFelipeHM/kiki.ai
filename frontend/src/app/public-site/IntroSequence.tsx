@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 export type IntroSlide = {
   eyebrow: string;
@@ -22,6 +22,14 @@ type Firefly = {
   hue: number;
 };
 
+function seededRandom(seed: number) {
+  let value = seed;
+  return () => {
+    value = (value * 1664525 + 1013904223) % 4294967296;
+    return value / 4294967296;
+  };
+}
+
 export function IntroSequence({
   slides,
   storageKey,
@@ -33,7 +41,7 @@ export function IntroSequence({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: -9999, y: -9999, active: false });
-  const lastAdvanceRef = useRef(0);
+  const lastAdvanceRef = useRef(-Infinity);
   const touchStartRef = useRef(0);
   const [index, setIndex] = useState(0);
   const [visible, setVisible] = useState(true);
@@ -44,7 +52,7 @@ export function IntroSequence({
     if (once && storageKey) {
       try {
         if (window.localStorage?.getItem(storageKey) === 'seen') {
-          document.documentElement.removeAttribute('data-public-intro-active');
+          document.documentElement.setAttribute('data-public-intro-active', 'false');
           setDismissed(true);
           return;
         }
@@ -56,9 +64,9 @@ export function IntroSequence({
     setVisible(true);
   }, [once, storageKey]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (dismissed) {
-      document.documentElement.removeAttribute('data-public-intro-active');
+      document.documentElement.setAttribute('data-public-intro-active', 'false');
       return;
     }
 
@@ -67,7 +75,7 @@ export function IntroSequence({
   }, [dismissed]);
 
   const finish = useCallback(() => {
-    document.documentElement.removeAttribute('data-public-intro-active');
+    document.documentElement.setAttribute('data-public-intro-active', 'false');
     setLeaving(true);
     if (once && storageKey) {
       try {
@@ -81,7 +89,7 @@ export function IntroSequence({
 
   const advance = useCallback(() => {
     const now = performance.now();
-    if (now - lastAdvanceRef.current < 850 || leaving || dismissed) return;
+    if (now - lastAdvanceRef.current < 320 || leaving || dismissed) return;
     lastAdvanceRef.current = now;
 
     setIndex((current) => {
@@ -95,7 +103,7 @@ export function IntroSequence({
 
   const retreat = useCallback(() => {
     const now = performance.now();
-    if (now - lastAdvanceRef.current < 850 || leaving || dismissed) return;
+    if (now - lastAdvanceRef.current < 320 || leaving || dismissed) return;
     lastAdvanceRef.current = now;
     setIndex((current) => Math.max(0, current - 1));
   }, [dismissed, leaving]);
@@ -163,21 +171,22 @@ export function IntroSequence({
       canvas.style.height = `${height}px`;
       context.setTransform(scale, 0, 0, scale, 0, 0);
 
+      const random = seededRandom(20260605);
       const count = Math.max(70, Math.min(150, Math.floor((width * height) / 11000)));
       fireflies = Array.from({ length: count }, () => {
-        const x = Math.random() * width;
-        const y = Math.random() * height;
+        const x = random() * width;
+        const y = random() * height;
         return {
           x,
           y,
           baseX: x,
           baseY: y,
-          vx: (Math.random() - 0.5) * 0.16,
-          vy: (Math.random() - 0.5) * 0.16,
-          radius: Math.random() * 1.9 + 0.7,
-          alpha: Math.random() * 0.34 + 0.14,
-          phase: Math.random() * Math.PI * 2,
-          hue: 260 + Math.random() * 58,
+          vx: 0,
+          vy: 0,
+          radius: random() * 1.9 + 0.7,
+          alpha: random() * 0.34 + 0.14,
+          phase: random() * Math.PI * 2,
+          hue: 260 + random() * 58,
         };
       });
     };
@@ -270,12 +279,10 @@ export function IntroSequence({
         {slides.map((slide, slideIndex) => (
           <section
             key={`${slide.eyebrow}-${slide.title}`}
-            className={`absolute mx-auto max-w-5xl transition-all duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            className={`absolute mx-auto max-w-5xl transition-opacity duration-500 ease-out ${
               slideIndex === index && visible && !leaving
-                ? 'translate-y-0 opacity-100 blur-0'
-                : slideIndex < index
-                  ? '-translate-y-8 opacity-0 blur-sm'
-                  : 'translate-y-8 opacity-0 blur-sm'
+                ? 'opacity-100'
+                : 'opacity-0'
             }`}
             aria-hidden={slideIndex !== index}
           >
