@@ -404,11 +404,11 @@ export function DarkSplashSection({
   description?: string;
 }) {
   return (
-    <section className="public-dark-splash flex min-h-screen items-center justify-center overflow-hidden px-6 md:px-8">
-      <div className="relative z-10 mx-auto max-w-4xl text-center select-none public-fade-up">
-        <p className="text-white/60 tracking-[0.3em] uppercase mb-6 text-[10px] md:text-sm">{eyebrow}</p>
-        <h1 className="mx-auto grid min-h-[5.2rem] max-w-4xl place-content-center gap-1 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white md:min-h-[8.6rem]">{children}</h1>
-        {description ? <p className="text-white/40 mt-6 text-base md:text-lg">{description}</p> : null}
+    <section className="public-dark-splash relative min-h-screen overflow-hidden px-6 md:px-8">
+      <div className="public-dark-copy-shell select-none public-fade-up">
+        <p className="public-dark-eyebrow-anchor px-6 text-[10px] uppercase tracking-[0.3em] text-white/60 md:text-sm">{eyebrow}</p>
+        <h1 className="public-dark-title-anchor mx-auto grid max-w-4xl place-content-center gap-1 px-6 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white">{children}</h1>
+        {description ? <p className="public-dark-description-anchor mx-auto max-w-2xl px-6 text-base text-white/40 md:text-lg">{description}</p> : null}
       </div>
     </section>
   );
@@ -420,11 +420,11 @@ export function GradientText({ children }: { children: ReactNode }) {
 
 export function StepSlide({ title, desc, detail }: { title: string; desc: string; detail?: string }) {
   return (
-    <section className="public-dark-splash public-snap-slide flex min-h-screen scroll-mt-16 items-center justify-center overflow-hidden px-6 md:px-8">
-      <div className="relative z-10 mx-auto w-full max-w-3xl text-center select-none public-fade-up">
-        <h2 className="mx-auto mb-6 grid min-h-[5.2rem] max-w-3xl place-content-center text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white md:min-h-[8.6rem]">{title}</h2>
-        <p className="text-white/60 text-lg leading-relaxed mb-3">{desc}</p>
-        {detail ? <p className="text-white/35 text-sm leading-relaxed">{detail}</p> : null}
+    <section className="public-dark-splash public-snap-slide relative min-h-screen scroll-mt-16 overflow-hidden px-6 md:px-8">
+      <div className="public-dark-copy-shell select-none public-fade-up">
+        <h2 className="public-dark-title-anchor mx-auto grid max-w-3xl place-content-center px-6 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white">{title}</h2>
+        <p className="public-dark-description-anchor mx-auto max-w-2xl px-6 text-lg leading-relaxed text-white/60">{desc}</p>
+        {detail ? <p className="public-dark-action-anchor mx-auto max-w-2xl px-6 text-sm leading-relaxed text-white/35">{detail}</p> : null}
       </div>
     </section>
   );
@@ -444,14 +444,26 @@ export function PageCta({
   dark?: boolean;
 }) {
   return (
-    <section className={`${dark ? 'public-dark-splash flex min-h-screen items-center text-white' : 'bg-white border-t border-gray-100 py-20 md:py-28'} px-6`}>
-      <div className="relative z-10 max-w-2xl mx-auto text-center public-fade-up">
-        <h2 className={`text-3xl md:text-5xl font-bold mb-5 leading-tight ${dark ? 'text-white' : 'text-gray-900'}`}>{title}</h2>
-        <p className={`${dark ? 'text-gray-400' : 'text-gray-500'} mb-10 text-base md:text-lg`}>{description}</p>
-        <Link href={href} className="inline-flex px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full font-semibold hover:shadow-xl hover:shadow-purple-900/40 transition-all text-base md:text-lg">
-          {label}
-        </Link>
-      </div>
+    <section className={`${dark ? 'public-dark-splash relative min-h-screen text-white' : 'bg-white border-t border-gray-100 py-20 md:py-28'} px-6`}>
+      {dark ? (
+        <div className="public-dark-copy-shell public-fade-up">
+          <h2 className="public-dark-title-anchor mx-auto max-w-3xl px-6 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white">{title}</h2>
+          <p className="public-dark-description-anchor mx-auto max-w-2xl px-6 text-base text-gray-400 md:text-lg">{description}</p>
+          <div className="public-dark-action-anchor">
+            <Link href={href} className="inline-flex px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full font-semibold hover:shadow-xl hover:shadow-purple-900/40 transition-all text-base md:text-lg">
+              {label}
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="relative z-10 max-w-2xl mx-auto text-center public-fade-up">
+          <h2 className="text-3xl md:text-5xl font-bold mb-5 leading-tight text-gray-900">{title}</h2>
+          <p className="text-gray-500 mb-10 text-base md:text-lg">{description}</p>
+          <Link href={href} className="inline-flex px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full font-semibold hover:shadow-xl hover:shadow-purple-900/40 transition-all text-base md:text-lg">
+            {label}
+          </Link>
+        </div>
+      )}
     </section>
   );
 }

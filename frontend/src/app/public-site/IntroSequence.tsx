@@ -276,32 +276,22 @@ export function IntroSequence({
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent,rgba(10,5,20,0.38))]" />
       <div className="relative z-10 flex min-h-screen items-center justify-center px-6 text-center select-none md:px-8">
-        {slides.map((slide, slideIndex) => (
-          <section
-            key={`${slide.eyebrow}-${slide.title}`}
-            className={`absolute inset-0 transition-opacity duration-500 ease-out ${
-              slideIndex === index && visible && !leaving
-                ? 'opacity-100'
-                : 'opacity-0'
-            }`}
-            aria-hidden={slideIndex !== index}
-          >
-            <p className="absolute left-1/2 top-[calc(50%-7.25rem)] w-full -translate-x-1/2 px-6 text-[10px] uppercase tracking-[0.3em] text-white/55 md:top-[calc(50%-8.5rem)] md:text-sm">
-              {slide.eyebrow}
+        <section key={`${index}-${slides[index]?.eyebrow}-${slides[index]?.title}`} className="absolute inset-0" aria-live="polite">
+          <p className="public-dark-eyebrow-anchor public-intro-copy public-intro-copy-eyebrow px-6 text-[10px] uppercase tracking-[0.3em] text-white/55 md:text-sm">
+            {slides[index]?.eyebrow}
+          </p>
+          <h1 className="public-dark-title-anchor mx-auto grid max-w-4xl place-content-center gap-1 px-6 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white">
+            <span className="public-intro-copy public-intro-copy-title">{slides[index]?.title}</span>
+            <span className="public-intro-copy public-intro-copy-gradient bg-gradient-to-r from-violet-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent">
+              {slides[index]?.gradient}
+            </span>
+          </h1>
+          {slides[index]?.description ? (
+            <p className="public-dark-description-anchor public-intro-copy public-intro-copy-description mx-auto max-w-2xl px-6 text-base leading-relaxed text-white/45 md:text-lg">
+              {slides[index]?.description}
             </p>
-            <h1 className="absolute left-1/2 top-1/2 mx-auto grid w-full max-w-4xl -translate-x-1/2 -translate-y-1/2 place-content-center gap-1 px-6 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white">
-              <span>{slide.title}</span>
-              <span className="bg-gradient-to-r from-violet-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent">
-                {slide.gradient}
-              </span>
-            </h1>
-            {slide.description ? (
-              <p className="absolute left-1/2 top-[calc(50%+6.25rem)] mx-auto w-full max-w-2xl -translate-x-1/2 px-6 text-base leading-relaxed text-white/45 md:top-[calc(50%+7.5rem)] md:text-lg">
-                {slide.description}
-              </p>
-            ) : null}
-          </section>
-        ))}
+          ) : null}
+        </section>
       </div>
       <p className="absolute bottom-10 left-1/2 z-20 -translate-x-1/2 text-xs uppercase tracking-[0.24em] text-white/35">
         Role para continuar
