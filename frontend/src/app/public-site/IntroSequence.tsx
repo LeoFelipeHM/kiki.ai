@@ -22,6 +22,38 @@ type Firefly = {
   hue: number;
 };
 
+const WORD_STAGGER_MS = 78;
+
+function splitWords(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean);
+}
+
+function AnimatedWords({
+  text,
+  isActive,
+  startIndex = 0,
+  className = '',
+}: {
+  text: string;
+  isActive: boolean;
+  startIndex?: number;
+  className?: string;
+}) {
+  const words = splitWords(text);
+
+  return words.map((word, wordIndex) => (
+    <span
+      key={`${text}-${word}-${wordIndex}`}
+      className={`${isActive ? 'public-intro-word' : 'opacity-0'} ${className} ${
+        wordIndex < words.length - 1 ? 'mr-[0.22em]' : ''
+      }`}
+      style={{ animationDelay: `${(startIndex + wordIndex) * WORD_STAGGER_MS}ms` }}
+    >
+      {word}
+    </span>
+  ));
+}
+
 export function IntroSequence({
   slides,
   storageKey,
@@ -39,6 +71,7 @@ export function IntroSequence({
   const [visible, setVisible] = useState(true);
   const [leaving, setLeaving] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [smallTextVisible, setSmallTextVisible] = useState(false);
 
   useEffect(() => {
     if (once && storageKey) {
@@ -128,6 +161,32 @@ export function IntroSequence({
       window.removeEventListener('touchend', onTouchEnd);
     };
   }, [advance, dismissed, retreat]);
+
+  useEffect(() => {
+    if (dismissed || leaving || !visible) {
+      setSmallTextVisible(false);
+      return;
+    }
+
+    setSmallTextVisible(false);
+
+    const activeSlide = slides[index];
+    if (!activeSlide) return;
+
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion) {
+      setSmallTextVisible(true);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSmallTextVisible(true);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [dismissed, index, leaving, slides, visible]);
 
   useEffect(() => {
     if (dismissed) return;
@@ -258,7 +317,7 @@ export function IntroSequence({
         {slides.map((slide, slideIndex) => (
           <section
             key={`${slide.eyebrow}-${slide.title}`}
-            className={`absolute mx-auto max-w-5xl transition-all duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            className={`absolute mx-auto w-full max-w-5xl transition-all duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)] ${
               slideIndex === index && visible && !leaving
                 ? 'translate-y-0 opacity-100 blur-0'
                 : slideIndex < index
@@ -267,19 +326,54 @@ export function IntroSequence({
             }`}
             aria-hidden={slideIndex !== index}
           >
-            <p className="mb-6 text-[10px] uppercase tracking-[0.3em] text-white/55 md:text-sm">{slide.eyebrow}</p>
-            <h1 className="text-[clamp(2rem,6vw,5.5rem)] font-bold leading-[1.15] text-white">
-              {slide.title}
-              {slide.gradient ? (
+            {(() => {
+              const titleWords = splitWords(slide.title);
+              const isActive = slideIndex === index && visible && !leaving;
+              const showSmallText = isActive && smallTextVisible;
+
+              return (
                 <>
-                  <br />
-                  <span className="bg-gradient-to-r from-violet-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent">
-                    {slide.gradient}
-                  </span>
+                  <p
+                    className="public-intro-small mb-6 text-[10px] uppercase tracking-[0.3em] text-white/55 md:text-sm"
+                    style={{ opacity: showSmallText ? 1 : 0 }}
+                  >
+                    {slide.eyebrow}
+                  </p>
+                  <h1
+                    className="overflow-visible px-2 pb-2 text-[clamp(2rem,6vw,5.5rem)] font-bold leading-[1.15] text-white"
+                    aria-label={[slide.title, slide.gradient].filter(Boolean).join(' ')}
+                  >
+                    <span aria-hidden="true">
+                      <AnimatedWords text={slide.title} isActive={isActive} />
+                    </span>
+                    {slide.gradient ? (
+                      <>
+                        <br />
+                        <span
+                          className="-mx-1 inline-block overflow-visible px-1 pb-1"
+                          aria-hidden="true"
+                        >
+                          <AnimatedWords
+                            text={slide.gradient}
+                            isActive={isActive}
+                            startIndex={titleWords.length}
+                            className="bg-gradient-to-r from-violet-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent"
+                          />
+                        </span>
+                      </>
+                    ) : null}
+                  </h1>
+                  {slide.description ? (
+                    <p
+                      className="public-intro-small mx-auto mt-6 max-w-2xl text-base leading-relaxed text-white/45 md:text-lg"
+                      style={{ opacity: showSmallText ? 1 : 0 }}
+                    >
+                      {slide.description}
+                    </p>
+                  ) : null}
                 </>
-              ) : null}
-            </h1>
-            {slide.description ? <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-white/45 md:text-lg">{slide.description}</p> : null}
+              );
+            })()}
           </section>
         ))}
       </div>

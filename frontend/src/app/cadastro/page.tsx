@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Sparkles } from 'lucide-react';
 import { PageShell } from '../public-site/components';
+import { dashboardRoutes } from '../public-site/routes';
 import { defaultOgImage } from '../public-site/seo';
 
 export const dynamic = 'force-static';
@@ -30,8 +30,8 @@ export default function CadastroPage() {
         <div className="max-w-md mx-auto public-fade-up">
           <div className="bg-white rounded-2xl md:rounded-3xl p-6 md:p-8 border border-gray-200 shadow-sm">
             <div className="text-center mb-6 md:mb-8">
-              <div className="w-12 h-12 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center mx-auto mb-3 md:mb-4">
-                <Sparkles className="w-6 h-6 md:w-7 md:h-7 text-white" aria-hidden="true" />
+              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl bg-white md:mb-4 md:h-16 md:w-16">
+                <img src="/favicon.svg" alt="" className="h-full w-full object-contain" aria-hidden="true" />
               </div>
               <h1 className="text-2xl md:text-3xl font-bold mb-2 text-gray-900">Crie sua conta</h1>
               <p className="text-sm md:text-base text-gray-600">Comece grátis, sem cartão de crédito</p>
@@ -74,13 +74,13 @@ export default function CadastroPage() {
                 />
               </div>
 
-              <Link href="/login" className="block w-full text-center py-2.5 md:py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg md:rounded-xl font-semibold hover:shadow-lg transition-all text-sm md:text-base">
+              <Link href={dashboardRoutes.signup} className="block w-full text-center py-2.5 md:py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg md:rounded-xl font-semibold hover:shadow-lg transition-all text-sm md:text-base">
                 Criar conta grátis
               </Link>
 
               <p className="text-center text-xs md:text-sm text-gray-600">
                 Já tem uma conta?{' '}
-                <Link href="/login" className="text-purple-600 hover:text-purple-700 font-medium">
+                <Link href={dashboardRoutes.login} className="text-purple-600 hover:text-purple-700 font-medium">
                   Entrar
                 </Link>
               </p>

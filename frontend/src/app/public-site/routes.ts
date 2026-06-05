@@ -11,6 +11,9 @@ export const publicRoutes = [
   { href: '/seguranca', label: 'Segurança' },
 ] as const;
 
+export const dashboardOrigin = process.env.NEXT_PUBLIC_DASHBOARD_ORIGIN ?? 'https://app.heykiki.com.br';
+
 export const dashboardRoutes = {
-  login: '/login',
+  login: `${dashboardOrigin}/login`,
+  signup: `${dashboardOrigin}/login`,
 } as const;

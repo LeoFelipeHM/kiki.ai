@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { CheckList, PageShell } from '../public-site/components';
 import { plans, pricingFaqs } from '../public-site/data';
+import { dashboardRoutes } from '../public-site/routes';
 import { breadcrumbJsonLd, defaultOgImage, faqJsonLd, StructuredData } from '../public-site/seo';
 
 export const dynamic = 'force-static';
@@ -58,7 +59,7 @@ export default function PrecosPage() {
                   {plan.price.startsWith('R$') ? <span className="text-sm md:text-base text-gray-600">/mês</span> : null}
                 </div>
                 <Link
-                  href="/cadastro"
+                  href={dashboardRoutes.signup}
                   className={`block w-full py-2.5 md:py-3 px-6 text-center rounded-full font-medium transition-all mb-4 md:mb-6 text-sm md:text-base ${
                     plan.featured ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
                   }`}
