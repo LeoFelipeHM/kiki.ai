@@ -44,6 +44,7 @@ export function IntroSequence({
     if (once && storageKey) {
       try {
         if (window.localStorage?.getItem(storageKey) === 'seen') {
+          document.documentElement.removeAttribute('data-public-intro-active');
           setDismissed(true);
           return;
         }
@@ -54,6 +55,16 @@ export function IntroSequence({
 
     setVisible(true);
   }, [once, storageKey]);
+
+  useEffect(() => {
+    if (dismissed) {
+      document.documentElement.removeAttribute('data-public-intro-active');
+      return;
+    }
+
+    document.documentElement.setAttribute('data-public-intro-active', 'true');
+    return () => document.documentElement.removeAttribute('data-public-intro-active');
+  }, [dismissed]);
 
   const finish = useCallback(() => {
     setLeaving(true);

@@ -13,6 +13,7 @@ import {
   Stethoscope,
 } from 'lucide-react';
 import { dashboardRoutes, publicRoutes } from './routes';
+import { ReactiveHeader } from './ReactiveHeader';
 
 const footerProductLinks: Array<[string, string]> = publicRoutes
   .filter((route) => ['/agentes', '/recursos', '/como-funciona', '/precos'].includes(route.href))
@@ -172,7 +173,7 @@ function FooterGroup({
 export function PageShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-white text-gray-900">
-      <Header />
+      <ReactiveHeader />
       <div className="public-page-transition">{children}</div>
       <Footer />
     </div>
