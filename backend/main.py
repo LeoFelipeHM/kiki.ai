@@ -43,8 +43,10 @@ def _cors_allow_origins() -> list[str]:
         "http://20.15.165.251:8000",
 
         # Servidor Caddy
+        "https://app.heykiki.com.br",
         "https://api.heykiki.com.br",
         "https://www.heykiki.com.br",
+        "https://heykiki.com.br",
     ]
 
     extra = os.getenv("CORS_ORIGINS", "").strip()

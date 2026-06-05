@@ -9,6 +9,7 @@ import {
   PageShell,
 } from '../public-site/components';
 import { IntroSequence } from '../public-site/IntroSequence';
+import { dashboardRoutes } from '../public-site/routes';
 import { breadcrumbJsonLd, defaultOgImage, StructuredData } from '../public-site/seo';
 
 export const dynamic = 'force-static';
@@ -60,7 +61,7 @@ export default function RecursosPage() {
           eyebrow={<><MessageCircle className="w-4 h-4" aria-hidden="true" /> Chat com IA</>}
           headline={<>Fale como fala<br />com um amigo.</>}
           body="Texto ou voz. Kiki entende contexto, aprende suas preferências e responde com ações diretas, sem precisar repetir o que você já disse."
-          ctaHref="/cadastro"
+          ctaHref={dashboardRoutes.signup}
           ctaLabel="Começar grátis"
           mockup={<ChatMockup />}
           mockupBg="from-purple-100 via-pink-50 to-rose-100"

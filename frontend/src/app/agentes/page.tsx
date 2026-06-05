@@ -34,13 +34,13 @@ export default function AgentesPage() {
         slides={[
           {
             eyebrow: 'Kiki',
-            title: 'Assistentes que trabalham',
-            gradient: 'por você',
+            title: 'Assistentes que',
+            gradient: 'trabalham por você',
           },
           {
             eyebrow: 'Pedido',
-            title: 'Você pede',
-            gradient: 'em linguagem natural.',
+            title: 'Você pede em',
+            gradient: 'linguagem natural.',
             description: 'Sem formulários, sem filtros, sem complicação.',
           },
           {

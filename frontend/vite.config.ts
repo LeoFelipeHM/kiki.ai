@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     // Host permitido quando o dev server é acessado via domínio (proxy reverso / DNS).
-    allowedHosts: ['www.heykiki.com.br', 'heykiki.com.br'],
+    allowedHosts: ['app.heykiki.com.br', 'www.heykiki.com.br', 'heykiki.com.br'],
     // Não processar ficheiros de build/deploy na raiz (evita erro "invalid JS" no Dockerfile, etc.)
     watch: {
       ignored: ['**/Dockerfile', '**/caddy.txt', '**/.dockerignore'],

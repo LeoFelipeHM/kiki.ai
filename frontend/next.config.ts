@@ -9,21 +9,22 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react'],
   },
-  async rewrites() {
-    const dashboardOrigin = process.env.DASHBOARD_ORIGIN;
-    if (!dashboardOrigin) return [];
+  async redirects() {
+    const dashboardOrigin = process.env.DASHBOARD_ORIGIN ?? process.env.NEXT_PUBLIC_DASHBOARD_ORIGIN ?? 'https://app.heykiki.com.br';
 
     return [
-      { source: '/login', destination: `${dashboardOrigin}/login` },
-      { source: '/home', destination: `${dashboardOrigin}/home` },
-      { source: '/chat', destination: `${dashboardOrigin}/chat` },
-      { source: '/calendar', destination: `${dashboardOrigin}/calendar` },
-      { source: '/notes', destination: `${dashboardOrigin}/notes` },
-      { source: '/contacts', destination: `${dashboardOrigin}/contacts` },
-      { source: '/settings', destination: `${dashboardOrigin}/settings` },
-      { source: '/profile/:path*', destination: `${dashboardOrigin}/profile/:path*` },
-      { source: '/integracao/:path*', destination: `${dashboardOrigin}/integracao/:path*` },
-      { source: '/admin/:path*', destination: `${dashboardOrigin}/admin/:path*` },
+      { source: '/cadastro', destination: `${dashboardOrigin}/login`, permanent: false },
+      { source: '/login', destination: `${dashboardOrigin}/login`, permanent: false },
+      { source: '/home', destination: `${dashboardOrigin}/home`, permanent: false },
+      { source: '/chat', destination: `${dashboardOrigin}/chat`, permanent: false },
+      { source: '/agents/:path*', destination: `${dashboardOrigin}/agents/:path*`, permanent: false },
+      { source: '/calendar', destination: `${dashboardOrigin}/calendar`, permanent: false },
+      { source: '/notes', destination: `${dashboardOrigin}/notes`, permanent: false },
+      { source: '/contacts', destination: `${dashboardOrigin}/contacts`, permanent: false },
+      { source: '/settings', destination: `${dashboardOrigin}/settings`, permanent: false },
+      { source: '/profile/:path*', destination: `${dashboardOrigin}/profile/:path*`, permanent: false },
+      { source: '/integracao/:path*', destination: `${dashboardOrigin}/integracao/:path*`, permanent: false },
+      { source: '/admin/:path*', destination: `${dashboardOrigin}/admin/:path*`, permanent: false },
     ];
   },
 };

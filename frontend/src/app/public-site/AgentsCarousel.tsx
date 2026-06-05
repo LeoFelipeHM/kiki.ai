@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { GradientIcon } from './components';
 import { agents as items } from './data';
+import { dashboardRoutes } from './routes';
 
 export function AgentsCarousel() {
   const [reducedMotion] = useState(
@@ -63,7 +64,7 @@ export function AgentsCarousel() {
                   ))}
                 </ul>
                 <Link
-                  href="/cadastro"
+                  href={dashboardRoutes.signup}
                   className="mt-6 inline-flex items-center gap-1 text-xs font-medium text-purple-600 transition-all group-hover:gap-2"
                 >
                   Usar assistente <ArrowRight className="h-3 w-3" aria-hidden="true" />

@@ -22,12 +22,36 @@ type Firefly = {
   hue: number;
 };
 
-function seededRandom(seed: number) {
-  let value = seed;
-  return () => {
-    value = (value * 1664525 + 1013904223) % 4294967296;
-    return value / 4294967296;
-  };
+const WORD_STAGGER_MS = 78;
+
+function splitWords(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean);
+}
+
+function AnimatedWords({
+  text,
+  isActive,
+  startIndex = 0,
+  className = '',
+}: {
+  text: string;
+  isActive: boolean;
+  startIndex?: number;
+  className?: string;
+}) {
+  const words = splitWords(text);
+
+  return words.map((word, wordIndex) => (
+    <span
+      key={`${text}-${word}-${wordIndex}`}
+      className={`${isActive ? 'public-intro-word' : 'opacity-0'} ${className} ${
+        wordIndex < words.length - 1 ? 'mr-[0.22em]' : ''
+      }`}
+      style={{ animationDelay: `${(startIndex + wordIndex) * WORD_STAGGER_MS}ms` }}
+    >
+      {word}
+    </span>
+  ));
 }
 
 export function IntroSequence({
@@ -47,6 +71,7 @@ export function IntroSequence({
   const [visible, setVisible] = useState(true);
   const [leaving, setLeaving] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [smallTextVisible, setSmallTextVisible] = useState(false);
 
   useEffect(() => {
     if (once && storageKey) {
@@ -148,6 +173,32 @@ export function IntroSequence({
       window.removeEventListener('touchend', onTouchEnd);
     };
   }, [advance, dismissed, retreat]);
+
+  useEffect(() => {
+    if (dismissed || leaving || !visible) {
+      setSmallTextVisible(false);
+      return;
+    }
+
+    setSmallTextVisible(false);
+
+    const activeSlide = slides[index];
+    if (!activeSlide) return;
+
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion) {
+      setSmallTextVisible(true);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSmallTextVisible(true);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [dismissed, index, leaving, slides, visible]);
 
   useEffect(() => {
     if (dismissed) return;
@@ -275,23 +326,69 @@ export function IntroSequence({
     >
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent,rgba(10,5,20,0.38))]" />
-      <div className="relative z-10 flex min-h-screen items-center justify-center px-6 text-center select-none md:px-8">
-        <section key={`${index}-${slides[index]?.eyebrow}-${slides[index]?.title}`} className="absolute inset-0" aria-live="polite">
-          <p className="public-dark-eyebrow-anchor public-intro-copy public-intro-copy-eyebrow px-6 text-[10px] uppercase tracking-[0.3em] text-white/55 md:text-sm">
-            {slides[index]?.eyebrow}
-          </p>
-          <h1 className="public-dark-title-anchor mx-auto grid max-w-4xl place-content-center gap-1 px-6 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white">
-            <span className="public-intro-copy public-intro-copy-title">{slides[index]?.title}</span>
-            <span className="public-intro-copy public-intro-copy-gradient bg-gradient-to-r from-violet-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent">
-              {slides[index]?.gradient}
-            </span>
-          </h1>
-          {slides[index]?.description ? (
-            <p className="public-dark-description-anchor public-intro-copy public-intro-copy-description mx-auto max-w-2xl px-6 text-base leading-relaxed text-white/45 md:text-lg">
-              {slides[index]?.description}
-            </p>
-          ) : null}
-        </section>
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-8 text-center select-none">
+        {slides.map((slide, slideIndex) => (
+          <section
+            key={`${slide.eyebrow}-${slide.title}`}
+            className={`absolute mx-auto w-full max-w-5xl transition-all duration-1000 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+              slideIndex === index && visible && !leaving
+                ? 'translate-y-0 opacity-100 blur-0'
+                : slideIndex < index
+                  ? '-translate-y-8 opacity-0 blur-sm'
+                  : 'translate-y-8 opacity-0 blur-sm'
+            }`}
+            aria-hidden={slideIndex !== index}
+          >
+            {(() => {
+              const titleWords = splitWords(slide.title);
+              const isActive = slideIndex === index && visible && !leaving;
+              const showSmallText = isActive && smallTextVisible;
+
+              return (
+                <>
+                  <p
+                    className="public-intro-small mb-6 text-[10px] uppercase tracking-[0.3em] text-white/55 md:text-sm"
+                    style={{ opacity: showSmallText ? 1 : 0 }}
+                  >
+                    {slide.eyebrow}
+                  </p>
+                  <h1
+                    className="overflow-visible px-2 pb-2 text-[clamp(2rem,6vw,5.5rem)] font-bold leading-[1.15] text-white"
+                    aria-label={[slide.title, slide.gradient].filter(Boolean).join(' ')}
+                  >
+                    <span aria-hidden="true">
+                      <AnimatedWords text={slide.title} isActive={isActive} />
+                    </span>
+                    {slide.gradient ? (
+                      <>
+                        <br />
+                        <span
+                          className="-mx-1 inline-block overflow-visible px-1 pb-1"
+                          aria-hidden="true"
+                        >
+                          <AnimatedWords
+                            text={slide.gradient}
+                            isActive={isActive}
+                            startIndex={titleWords.length}
+                            className="bg-gradient-to-r from-violet-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent"
+                          />
+                        </span>
+                      </>
+                    ) : null}
+                  </h1>
+                  {slide.description ? (
+                    <p
+                      className="public-intro-small mx-auto mt-6 max-w-2xl text-base leading-relaxed text-white/45 md:text-lg"
+                      style={{ opacity: showSmallText ? 1 : 0 }}
+                    >
+                      {slide.description}
+                    </p>
+                  ) : null}
+                </>
+              );
+            })()}
+          </section>
+        ))}
       </div>
       <p className="absolute bottom-10 left-1/2 z-20 -translate-x-1/2 text-xs uppercase tracking-[0.24em] text-white/35">
         Role para continuar

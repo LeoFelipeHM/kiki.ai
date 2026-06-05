@@ -65,7 +65,7 @@ export function Header() {
               Entrar
             </Link>
             <Link
-              href="/cadastro"
+              href={dashboardRoutes.signup}
               className="px-5 py-2 text-sm text-white bg-gradient-to-r from-purple-600 to-pink-600 rounded-full hover:shadow-lg transition-all"
             >
               Começar grátis
@@ -99,7 +99,7 @@ export function Header() {
               <Link href={dashboardRoutes.login} className="block px-4 py-3 text-sm text-gray-700 rounded-xl hover:bg-gray-50">
                 Entrar
               </Link>
-              <Link href="/cadastro" className="block px-4 py-3 text-sm text-purple-700 rounded-xl hover:bg-purple-50">
+              <Link href={dashboardRoutes.signup} className="block px-4 py-3 text-sm text-purple-700 rounded-xl hover:bg-purple-50">
                 Começar grátis
               </Link>
             </nav>
@@ -134,8 +134,8 @@ export function Footer() {
 export function BrandLogo({ href, className = '' }: { href: string; className?: string }) {
   return (
     <Link href={href} className={`flex items-center gap-2 md:gap-3 hover:opacity-80 transition-opacity ${className}`}>
-      <span className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shrink-0">
-        <Sparkles className="w-4 h-4 md:w-5 md:h-5 text-white" aria-hidden="true" />
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white md:h-9 md:w-9">
+        <img src="/favicon.svg" alt="" className="h-full w-full object-contain" aria-hidden="true" />
       </span>
       <span className="text-lg md:text-xl font-semibold text-gray-900">Kiki</span>
     </Link>
@@ -203,7 +203,7 @@ export function Hero() {
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center px-4">
           <Link
-            href="/cadastro"
+            href={dashboardRoutes.signup}
             className="px-6 md:px-8 py-3 md:py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full font-semibold hover:shadow-xl transition-all text-base md:text-lg"
           >
             Começar grátis
@@ -433,7 +433,7 @@ export function StepSlide({ title, desc, detail }: { title: string; desc: string
 export function PageCta({
   title,
   description,
-  href = '/cadastro',
+  href = dashboardRoutes.signup,
   label = 'Começar grátis',
   dark = false,
 }: {
