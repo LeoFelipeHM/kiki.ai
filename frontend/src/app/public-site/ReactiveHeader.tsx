@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Bot, Sparkles } from 'lucide-react';
+import { Bot } from 'lucide-react';
 import { dashboardRoutes, publicRoutes } from './routes';
 
 const darkIntroRoutes = new Set(['/', '/agentes', '/recursos', '/como-funciona']);
@@ -46,9 +47,15 @@ export function ReactiveHeader() {
         <div className="flex h-16 items-center justify-between md:grid md:grid-cols-[1fr_auto_1fr] md:gap-6">
           <div className="md:flex md:justify-start">
             <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80 md:gap-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 md:h-8 md:w-8">
-                <Sparkles className="h-4 w-4 text-white md:h-5 md:w-5" aria-hidden="true" />
-              </span>
+              <Image
+                src="/kiki-logo.png"
+                alt=""
+                width={36}
+                height={36}
+                className="h-8 w-8 shrink-0 object-contain md:h-9 md:w-9"
+                aria-hidden="true"
+                priority
+              />
               <span className={`text-lg font-semibold transition-colors md:text-xl ${isDarkTop ? 'text-white' : 'text-gray-900'}`}>
                 Kiki
               </span>
