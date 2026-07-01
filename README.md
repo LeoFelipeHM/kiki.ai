@@ -4,6 +4,16 @@ Kiki.ai é uma plataforma full stack de assistente pessoal criada como projeto d
 
 A proposta do projeto é oferecer uma assistente chamada Kiki para centralizar rotinas pessoais em um só lugar: conversar com IA, organizar agenda, registrar notas, acompanhar contatos, configurar preferências, receber notificações e usar recursos de voz quando as integrações externas estiverem configuradas.
 
+## Demonstração
+
+O projeto está disponível em:
+
+- Site: https://heykiki.com.br
+- Usuário de teste: `visitante@heykiki.com`
+- Senha: `Visitante@2026`
+
+A conta visitante existe apenas para avaliação do projeto e pode ter permissões/dados limitados.
+
 ## Visão do Produto
 
 O projeto é composto por três frentes principais:
