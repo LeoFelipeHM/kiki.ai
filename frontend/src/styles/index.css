@@ -6,6 +6,7 @@
 html,
 body {
   height: 100%;
+  background: #0a0514;
   scroll-behavior: smooth;
 }
 #root {
@@ -13,7 +14,7 @@ body {
 }
 
 .public-page-transition {
-  animation: public-page-enter 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  min-height: 100vh;
 }
 
 .public-fade-up {
@@ -22,6 +23,65 @@ body {
 
 .public-scale-in {
   animation: public-scale-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.public-intro-copy {
+  animation: public-intro-copy 900ms cubic-bezier(0.19, 1, 0.22, 1) both;
+  will-change: opacity, scale, filter;
+}
+
+.public-intro-copy-eyebrow {
+  animation-delay: 40ms;
+}
+
+.public-intro-copy-title {
+  animation-delay: 90ms;
+}
+
+.public-intro-copy-gradient {
+  animation-delay: 150ms;
+}
+
+.public-intro-copy-description {
+  animation-delay: 210ms;
+}
+
+.public-dark-copy-shell {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  text-align: center;
+  pointer-events: none;
+}
+
+.public-dark-eyebrow-anchor,
+.public-dark-title-anchor,
+.public-dark-description-anchor,
+.public-dark-action-anchor {
+  position: absolute;
+  left: 50%;
+  width: 100%;
+}
+
+.public-dark-eyebrow-anchor {
+  top: calc(50% - clamp(7.25rem, 16dvh, 8.5rem));
+  transform: translateX(-50%);
+}
+
+.public-dark-title-anchor {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.public-dark-description-anchor {
+  top: calc(50% + clamp(6.25rem, 14dvh, 7.5rem));
+  transform: translateX(-50%);
+}
+
+.public-dark-action-anchor {
+  top: calc(50% + clamp(9.5rem, 22dvh, 12rem));
+  transform: translateX(-50%);
+  pointer-events: auto;
 }
 
 .public-card-motion {
@@ -156,15 +216,6 @@ body {
   }
 }
 
-@keyframes public-page-enter {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 @keyframes public-fade-up {
   from {
     opacity: 0;
@@ -184,6 +235,23 @@ body {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes public-intro-copy {
+  0% {
+    opacity: 0;
+    filter: blur(8px);
+    scale: 0.99;
+  }
+  58% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    scale: 1;
   }
 }
 

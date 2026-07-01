@@ -40,7 +40,7 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   return (
-    <PageShell>
+    <PageShell darkInitial>
       <StructuredData data={[organizationJsonLd(), websiteJsonLd(), softwareApplicationJsonLd()]} />
       <IntroSequence
         slides={[

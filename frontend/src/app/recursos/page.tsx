@@ -34,7 +34,7 @@ export const metadata: Metadata = {
 
 export default function RecursosPage() {
   return (
-    <PageShell>
+    <PageShell darkInitial>
       <StructuredData data={breadcrumbJsonLd([{ name: 'Início', path: '/' }, { name: 'Recursos', path: '/recursos' }])} />
       <IntroSequence
         slides={[

@@ -13,6 +13,7 @@ import {
   Stethoscope,
 } from 'lucide-react';
 import { dashboardRoutes, publicRoutes } from './routes';
+import { ReactiveHeader } from './ReactiveHeader';
 
 const footerProductLinks: Array<[string, string]> = publicRoutes
   .filter((route) => ['/agentes', '/recursos', '/como-funciona', '/precos'].includes(route.href))
@@ -169,10 +170,10 @@ function FooterGroup({
   );
 }
 
-export function PageShell({ children }: { children: ReactNode }) {
+export function PageShell({ children, darkInitial = false }: { children: ReactNode; darkInitial?: boolean }) {
   return (
-    <div className="min-h-screen bg-white text-gray-900">
-      <Header />
+    <div className={`min-h-screen text-gray-900 ${darkInitial ? 'bg-[#0a0514]' : 'bg-white'}`}>
+      <ReactiveHeader />
       <div className="public-page-transition">{children}</div>
       <Footer />
     </div>
@@ -403,11 +404,11 @@ export function DarkSplashSection({
   description?: string;
 }) {
   return (
-    <section className="public-dark-splash min-h-[calc(100vh-64px)] flex items-center justify-center px-8 overflow-hidden">
-      <div className="relative z-10 text-center max-w-4xl mx-auto select-none public-fade-up">
-        <p className="text-white/60 tracking-[0.3em] uppercase mb-6 text-[10px] md:text-sm">{eyebrow}</p>
-        <h1 className="text-white leading-[1.15] text-[clamp(2rem,6vw,5.5rem)] font-bold">{children}</h1>
-        {description ? <p className="text-white/40 mt-6 text-base md:text-lg">{description}</p> : null}
+    <section className="public-dark-splash relative min-h-screen overflow-hidden px-6 md:px-8">
+      <div className="public-dark-copy-shell select-none public-fade-up">
+        <p className="public-dark-eyebrow-anchor px-6 text-[10px] uppercase tracking-[0.3em] text-white/60 md:text-sm">{eyebrow}</p>
+        <h1 className="public-dark-title-anchor mx-auto grid max-w-4xl place-content-center gap-1 px-6 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white">{children}</h1>
+        {description ? <p className="public-dark-description-anchor mx-auto max-w-2xl px-6 text-base text-white/40 md:text-lg">{description}</p> : null}
       </div>
     </section>
   );
@@ -419,11 +420,11 @@ export function GradientText({ children }: { children: ReactNode }) {
 
 export function StepSlide({ title, desc, detail }: { title: string; desc: string; detail?: string }) {
   return (
-    <section className="public-dark-splash min-h-[calc(100vh-64px)] flex items-center justify-center px-8 overflow-hidden scroll-mt-16 public-snap-slide">
-      <div className="relative z-10 max-w-2xl w-full text-center select-none public-fade-up">
-        <h2 className="text-white mb-6 leading-tight text-[clamp(2rem,5vw,4rem)] font-bold">{title}</h2>
-        <p className="text-white/60 text-lg leading-relaxed mb-3">{desc}</p>
-        {detail ? <p className="text-white/35 text-sm leading-relaxed">{detail}</p> : null}
+    <section className="public-dark-splash public-snap-slide relative min-h-screen scroll-mt-16 overflow-hidden px-6 md:px-8">
+      <div className="public-dark-copy-shell select-none public-fade-up">
+        <h2 className="public-dark-title-anchor mx-auto grid max-w-3xl place-content-center px-6 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white">{title}</h2>
+        <p className="public-dark-description-anchor mx-auto max-w-2xl px-6 text-lg leading-relaxed text-white/60">{desc}</p>
+        {detail ? <p className="public-dark-action-anchor mx-auto max-w-2xl px-6 text-sm leading-relaxed text-white/35">{detail}</p> : null}
       </div>
     </section>
   );
@@ -443,14 +444,26 @@ export function PageCta({
   dark?: boolean;
 }) {
   return (
-    <section className={`py-20 md:py-28 px-6 ${dark ? 'public-dark-splash text-white' : 'bg-white border-t border-gray-100'}`}>
-      <div className="relative z-10 max-w-2xl mx-auto text-center public-fade-up">
-        <h2 className={`text-3xl md:text-5xl font-bold mb-5 leading-tight ${dark ? 'text-white' : 'text-gray-900'}`}>{title}</h2>
-        <p className={`${dark ? 'text-gray-400' : 'text-gray-500'} mb-10 text-base md:text-lg`}>{description}</p>
-        <Link href={href} className="inline-flex px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full font-semibold hover:shadow-xl hover:shadow-purple-900/40 transition-all text-base md:text-lg">
-          {label}
-        </Link>
-      </div>
+    <section className={`${dark ? 'public-dark-splash relative min-h-screen text-white' : 'bg-white border-t border-gray-100 py-20 md:py-28'} px-6`}>
+      {dark ? (
+        <div className="public-dark-copy-shell public-fade-up">
+          <h2 className="public-dark-title-anchor mx-auto max-w-3xl px-6 text-balance text-[clamp(1.7rem,4.4vw,3.9rem)] font-bold leading-[1.08] text-white">{title}</h2>
+          <p className="public-dark-description-anchor mx-auto max-w-2xl px-6 text-base text-gray-400 md:text-lg">{description}</p>
+          <div className="public-dark-action-anchor">
+            <Link href={href} className="inline-flex px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full font-semibold hover:shadow-xl hover:shadow-purple-900/40 transition-all text-base md:text-lg">
+              {label}
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="relative z-10 max-w-2xl mx-auto text-center public-fade-up">
+          <h2 className="text-3xl md:text-5xl font-bold mb-5 leading-tight text-gray-900">{title}</h2>
+          <p className="text-gray-500 mb-10 text-base md:text-lg">{description}</p>
+          <Link href={href} className="inline-flex px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full font-semibold hover:shadow-xl hover:shadow-purple-900/40 transition-all text-base md:text-lg">
+            {label}
+          </Link>
+        </div>
+      )}
     </section>
   );
 }
